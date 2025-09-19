@@ -14,7 +14,7 @@ return new class extends Migration
     public function up()
     {
         Schema::create('google_synchronizations', function (Blueprint $table) {
-            $table->string('id');
+            $table->string('id')->primary();
             $table->morphs('synchronizable', 'google_synchronizations_type_id_index');
             $table->string('token')->nullable();
             $table->string('resource_id')->nullable();
