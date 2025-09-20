@@ -7,6 +7,7 @@ use Illuminate\View\View;
 use Webkul\Google\Repositories\GoogleAppRepository;
 use Webkul\Google\Services\Google;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class GoogleAppController extends Controller
 {
@@ -34,6 +35,13 @@ class GoogleAppController extends Controller
      */
     public function store(): RedirectResponse
     {
+        // Log incoming request
+        Log::info('GoogleAppController@store called', [
+            'request_data' => request()->all(),
+            'user_id' => Auth::id(),
+        ]);
+
+        // Validate
         $data = request()->validate([
             'client_id'     => 'required|string',
             'client_secret' => 'required|string',
@@ -42,7 +50,23 @@ class GoogleAppController extends Controller
             'scopes'        => 'nullable|array',
         ]);
 
-        $this->googleAppRepository->upsertForUser(Auth::id(), $data);
+        // Log validated data
+        Log::info('Validated data', $data);
+
+        try {
+            $result = $this->googleAppRepository->upsertForUser(Auth::id(), $data);
+
+            // Log repository result
+            Log::info('Upsert result', ['result' => $result->toArray() ?? $result]);
+        } catch (\Throwable $e) {
+            // Log any exception
+            Log::error('GoogleAppController@store exception', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
 
         return redirect()
             ->route('admin.google.app.index')
