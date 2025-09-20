@@ -3,7 +3,6 @@
 namespace Webkul\Google\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Webkul\Google\Concerns\Synchronizable;
 use Webkul\Google\Contracts\GoogleApp as App;
 use Illuminate\Support\Facades\Crypt;
 
