@@ -57,7 +57,7 @@ class Google
         $scopes = array_map(fn($s) => $scopeMap[$s] ?? $s, $scopes);
         $client->setScopes($scopes);
         $client->setAccessType('offline');
-        $client->setApprovalPrompt('force');
+        $client->setPrompt('consent'); // forces new refresh token
         $client->setIncludeGrantedScopes(true);
 
         $this->client = $client;

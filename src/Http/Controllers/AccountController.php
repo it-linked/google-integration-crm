@@ -28,7 +28,7 @@ class AccountController extends Controller
 
         $account = $this->accountRepository->findOneByField('user_id', auth()->user()->id);
 
-        return view('google::'.$route.'.index', compact('account'));
+        return view('google::' . $route . '.index', compact('account'));
     }
 
     /**
@@ -37,6 +37,8 @@ class AccountController extends Controller
     public function store(): RedirectResponse
     {
         $route = request('route', 'calendar');
+
+        // Check if user already has an account
         $account = $this->accountRepository->findOneByField('user_id', auth()->user()->id);
 
         if ($account) {
@@ -55,22 +57,30 @@ class AccountController extends Controller
             return redirect()->route('admin.google.index', ['route' => $route]);
         }
 
-        // Redirect to Google OAuth if no code
+        // If no OAuth code, redirect to Google
         if (! request()->has('code')) {
             session()->put('route', $route);
-            return redirect($this->google->forCurrentUser()->createAuthUrl());
+
+            $authUrl = $this->google
+                ->forCurrentUser()
+                ->createAuthUrl();
+
+            return redirect($authUrl);
         }
 
-        // Exchange code for access token
-        $token = $this->google->forCurrentUser()->getClient()->fetchAccessTokenWithAuthCode(request('code'));
+        // Step 1: Exchange code for access token
+        $token = $this->google
+            ->forCurrentUser()
+            ->getClient()
+            ->fetchAccessTokenWithAuthCode(request('code'));
 
-        // Attach token to client
+        // Step 2: Attach token to client
         $this->google->connectUsing($token);
 
-        // Fetch user info from Google
+        // Step 3: Fetch Google user info
         $googleUser = $this->google->service('Oauth2')->userinfo->get();
 
-        // Store or update account
+        // Step 4: Store account with full token (including refresh_token)
         $this->userRepository->find(auth()->user()->id)->accounts()->updateOrCreate(
             ['google_id' => $googleUser->id],
             [
