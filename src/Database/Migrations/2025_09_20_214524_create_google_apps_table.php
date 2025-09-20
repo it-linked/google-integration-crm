@@ -21,11 +21,13 @@ return new class extends Migration
             $table->string('webhook_uri')->nullable();
             $table->json('scopes')->nullable();
             // 🔑 Link to the user who owns these credentials
-            $table->integer('user_id');
+            // Match users.id type exactly
+            $table->unsignedInteger('user_id');
+
             $table->foreign('user_id')
                 ->references('id')
                 ->on('users')
-                ->onDelete('cascade'); // auto-delete app when user is removed
+                ->onDelete('cascade');
             $table->timestamps();
         });
     }

@@ -39,6 +39,25 @@ return [
         ],
     ],
 
+    // ✅ New section for Google App configuration
+    'app' => [
+        'index' => [
+            'title'          => 'Google App Configuration',
+            'info'           => 'Store and manage your Google App credentials to enable API integrations.',
+            'add'            => 'Add Configuration',
+            'edit'           => 'Update Configuration',
+            'save'           => 'Save Configuration',
+            'remove'         => 'Remove Configuration',
+            'client-id'      => 'Client ID',
+            'client-secret'  => 'Client Secret',
+            'redirect-uri'   => 'Redirect URI',
+            'webhook-uri'    => 'Webhook URI',
+            'scopes'         => 'Scopes',
+            'configuration-saved'   => 'Google App configuration saved successfully.',
+            'configuration-deleted' => 'Google App configuration removed successfully.',
+        ],
+    ],
+
     'tabs' => [
         'calendar' => 'Google Calendar',
         'meet'     => 'Google Meet',

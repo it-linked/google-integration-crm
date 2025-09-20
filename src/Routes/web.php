@@ -22,6 +22,10 @@ Route::group([
         Route::post('sync/{id}', [CalendarController::class, 'sync'])->name('admin.google.calendar.sync');
 
         Route::post('create-link', [MeetController::class, 'createLink'])->name('admin.google.meet.create_link');
+
+        Route::get('/app/create',        [GoogleAppController::class, 'index'])->name('admin.google.app.index');
+        Route::post('/app/store',  [GoogleAppController::class, 'store'])->name('admin.google.app.store');
+        Route::delete('/app/destroy', [GoogleAppController::class, 'destroy'])->name('admin.google.app.destroy');
     });
 
     Route::post('webhook', [WebhookController::class])->name('admin.google.webhook');
