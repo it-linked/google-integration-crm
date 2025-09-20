@@ -47,7 +47,6 @@ class Google
         $client->setClientSecret($googleApp->client_secret);
         $client->setRedirectUri($googleApp->redirect_uri);
 
-        // Map friendly names to Google scopes
         $scopeMap = [
             'calendar' => 'https://www.googleapis.com/auth/calendar',
             'meet'     => 'https://www.googleapis.com/auth/calendar.events',
@@ -55,9 +54,10 @@ class Google
 
         $scopes = $googleApp->scopes ?? ['calendar'];
         $scopes = array_map(fn($s) => $scopeMap[$s] ?? $s, $scopes);
+
         $client->setScopes($scopes);
         $client->setAccessType('offline');
-        $client->setPrompt('consent'); // forces new refresh token
+        $client->setPrompt('consent');
         $client->setIncludeGrantedScopes(true);
 
         $this->client = $client;
@@ -88,7 +88,7 @@ class Google
 
         $this->client->setAccessToken($token);
 
-        // Auto-refresh if expired and refresh token exists
+        // Auto-refresh token if expired
         if ($this->client->isAccessTokenExpired() && $this->client->getRefreshToken()) {
             $newToken = $this->client->fetchAccessTokenWithRefreshToken($this->client->getRefreshToken());
             $this->client->setAccessToken($newToken);
@@ -98,7 +98,7 @@ class Google
     }
 
     /**
-     * Revoke a token
+     * Revoke token
      */
     public function revokeToken(array|string|null $token = null): bool
     {
@@ -111,7 +111,7 @@ class Google
     }
 
     /**
-     * Create a Google service instance (e.g., Oauth2, Calendar)
+     * Create a Google service instance
      */
     public function service(string $service): mixed
     {
