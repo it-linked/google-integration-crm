@@ -45,7 +45,7 @@
                     @lang('google::app.app.index.scopes')
                 </x-admin::form.control-group.label>
 
-                <x-admin::form.control-group.control type="text" name="scopes" :value="is_array($googleApp->scopes) ? implode(',', $googleApp->scopes) : ''"
+                <x-admin::form.control-group.control type="text" name="scopes" :value="is_array($googleApp?->scopes) ? implode(',', $googleApp->scopes) : ''"
                     placeholder="calendar,meet" />
 
             </x-admin::form.control-group>
