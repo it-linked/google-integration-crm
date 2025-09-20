@@ -35,9 +35,9 @@ class GoogleAppController extends Controller
      */
     public function store(): RedirectResponse
     {
-        // Log incoming request
+        $requestData = request()->all();
         Log::info('GoogleAppController@store called', [
-            'request_data' => request()->all(),
+            'request_data' => $requestData,
             'user_id' => Auth::id(),
         ]);
 
@@ -46,37 +46,35 @@ class GoogleAppController extends Controller
             'client_secret' => 'required|string',
             'redirect_uri'  => 'nullable|url',
             'webhook_uri'   => 'nullable|url',
-            'scopes'        => 'nullable|string', // change to string
+            'scopes'        => 'nullable|array',
         ]);
 
-        // Convert scopes string to array
-        if (!empty($data['scopes'])) {
-            $data['scopes'] = array_map('trim', explode(',', $data['scopes']));
-        } else {
-            $data['scopes'] = [];
-        }
-
-        // Log validated data
         Log::info('Validated data', $data);
 
         try {
-            $result = $this->googleAppRepository->upsertForUser(Auth::id(), $data);
+            // Upsert Google App
+            $googleApp = $this->googleAppRepository->upsertForUser(Auth::id(), $data);
 
-            // Log repository result
-            Log::info('Upsert result', ['result' => $result->toArray() ?? $result]);
+            Log::info('GoogleApp upserted successfully', [
+                'google_app_id' => $googleApp->id,
+                'user_id' => Auth::id(),
+            ]);
+
+            return redirect()
+                ->route('admin.google.app.index')
+                ->with('success', trans('google::app.index.configuration-saved'));
         } catch (\Throwable $e) {
-            // Log any exception
+            // Log full exception details
             Log::error('GoogleAppController@store exception', [
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
+                'user_id' => Auth::id(),
             ]);
 
-            return back()->withErrors(['error' => $e->getMessage()]);
+            return back()->withErrors([
+                'error' => 'Failed to save Google App configuration: ' . $e->getMessage()
+            ])->withInput();
         }
-
-        return redirect()
-            ->route('admin.google.app.index')
-            ->with('success', trans('google::app.index.configuration-saved'));
     }
 
     /**

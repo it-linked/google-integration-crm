@@ -15,7 +15,8 @@ class GoogleApp extends Model implements App
         'client_secret',
         'redirect_uri',
         'webhook_uri',
-        'scopes'
+        'scopes',
+        'user_id'
     ];
 
     protected $casts = [

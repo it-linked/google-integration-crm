@@ -3,6 +3,7 @@
 namespace Webkul\Google\Repositories;
 
 use Webkul\Core\Eloquent\Repository;
+use Webkul\Google\Models\GoogleApp;
 
 class GoogleAppRepository extends Repository
 {
@@ -13,7 +14,7 @@ class GoogleAppRepository extends Repository
      */
     public function model()
     {
-        return 'Webkul\Google\Contracts\GoogleApp';
+        return GoogleApp::class;  // ← Use the actual model, not the contract
     }
 
     /**
@@ -31,7 +32,6 @@ class GoogleAppRepository extends Repository
      */
     public function upsertForUser(int $userId, array $data)
     {
-        // Ensure 'user_id' is always set explicitly
         $data['user_id'] = $userId;
 
         return $this->model->updateOrCreate(
@@ -40,3 +40,4 @@ class GoogleAppRepository extends Repository
         );
     }
 }
+
