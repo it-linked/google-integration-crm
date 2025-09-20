@@ -8,8 +8,6 @@ use Illuminate\Support\Facades\Crypt;
 
 class GoogleApp extends Model implements App
 {
-    use Synchronizable;
-
     protected $table = 'google_apps';
 
     protected $fillable = [
