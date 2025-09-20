@@ -27,7 +27,7 @@
                 <x-google::tabs />
 
                 <!-- Add Configuration Button -->
-                <a href="{{ route('admin.google.app.create') }}" class="primary-button">
+                <a href="{{ route('admin.google.app.index') }}" class="primary-button">
                     @lang('google::app.calendar.index.add-configuration')
                 </a>
             </div>
