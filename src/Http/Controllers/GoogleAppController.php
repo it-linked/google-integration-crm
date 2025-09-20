@@ -26,7 +26,7 @@ class GoogleAppController extends Controller
         $userId    = Auth::id();
         $googleApp = $this->googleAppRepository->findByUserId($userId);
 
-        return view('google::app.index', compact('googleApp'));
+        return view('google::google.app.index', compact('googleApp'));
     }
 
     /**
