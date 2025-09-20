@@ -22,9 +22,23 @@
         <!-- Content -->
         <div
             class="box-shadow flex flex-col gap-4 rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 max-xl:flex-wrap">
-            <div class="flex gap-2 border-b border-gray-200 dark:border-gray-800 justify-between items-center">
+            <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 pb-2">
                 <!-- Tabs -->
-                <x-google::tabs />
+                <div class="flex gap-6">
+                    {{-- Example tabs – replace with <x-google::tabs /> --}}
+                    <a href="#"
+                        class="px-3 py-2 border-b-2 border-transparent hover:border-indigo-500 text-gray-600 dark:text-gray-300">
+                        @lang('google::app.tabs.account')
+                    </a>
+                    <a href="#"
+                        class="px-3 py-2 border-b-2 border-transparent hover:border-indigo-500 text-gray-600 dark:text-gray-300">
+                        @lang('google::app.tabs.calendar')
+                    </a>
+                    <a href="#"
+                        class="px-3 py-2 border-b-2 border-transparent hover:border-indigo-500 text-gray-600 dark:text-gray-300">
+                        @lang('google::app.tabs.meet')
+                    </a>
+                </div>
 
                 <!-- Add Configuration Button -->
                 <a href="{{ route('admin.google.app.index') }}" class="primary-button">
