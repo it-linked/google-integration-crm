@@ -11,9 +11,6 @@ use Illuminate\Support\Facades\Log;
 
 class GoogleAppController extends Controller
 {
-    /**
-     * Create a new controller instance.
-     */
     public function __construct(
         protected GoogleAppRepository $googleAppRepository,
         protected Google $googleService
@@ -24,8 +21,7 @@ class GoogleAppController extends Controller
      */
     public function index(): View
     {
-        $userId    = Auth::id();
-        $googleApp = $this->googleAppRepository->findByUserId($userId);
+        $googleApp = $this->googleAppRepository->findByUserId(Auth::id());
 
         return view('google::google.app.index', compact('googleApp'));
     }
@@ -35,12 +31,6 @@ class GoogleAppController extends Controller
      */
     public function store(): RedirectResponse
     {
-        $requestData = request()->all();
-        Log::info('GoogleAppController@store called', [
-            'request_data' => $requestData,
-            'user_id' => Auth::id(),
-        ]);
-
         $data = request()->validate([
             'client_id'     => 'required|string',
             'client_secret' => 'required|string',
@@ -49,34 +39,23 @@ class GoogleAppController extends Controller
             'scopes'        => 'nullable|string',
         ]);
 
-        // Convert comma-separated string to array
-        if (!empty($data['scopes'])) {
-            $data['scopes'] = array_map('trim', explode(',', $data['scopes']));
-        } else {
-            $data['scopes'] = []; // always store as array
-        }
+        // Convert comma-separated string to array and trim
+        $data['scopes'] = !empty($data['scopes'])
+            ? array_map('trim', explode(',', $data['scopes']))
+            : [];
 
-        Log::info('Validated data', $data);
+        Log::info('Saving Google App', ['data' => $data, 'user_id' => Auth::id()]);
 
         try {
-            // Upsert Google App
             $googleApp = $this->googleAppRepository->upsertForUser(Auth::id(), $data);
 
-            Log::info('GoogleApp upserted successfully', [
-                'google_app_id' => $googleApp->id,
-                'user_id' => Auth::id(),
-            ]);
+            Log::info('Google App saved', ['google_app_id' => $googleApp->id, 'user_id' => Auth::id()]);
 
             return redirect()
                 ->route('admin.google.app.index')
                 ->with('success', trans('google::app.index.configuration-saved'));
         } catch (\Throwable $e) {
-            // Log full exception details
-            Log::error('GoogleAppController@store exception', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'user_id' => Auth::id(),
-            ]);
+            Log::error('Failed to save Google App', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
 
             return back()->withErrors([
                 'error' => 'Failed to save Google App configuration: ' . $e->getMessage()
@@ -92,13 +71,10 @@ class GoogleAppController extends Controller
         $googleApp = $this->googleAppRepository->findByUserId(Auth::id());
 
         if ($googleApp) {
-            // 🔹 Revoke existing token if you want to fully disconnect
             try {
-                $this->googleService
-                    ->forCurrentUser()
-                    ->revokeToken();
+                $this->googleService->forCurrentUser()->revokeToken();
             } catch (\Throwable $e) {
-                // Silently ignore revoke failures
+                // ignore revoke failures
             }
 
             $googleApp->delete();
