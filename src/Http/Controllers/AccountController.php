@@ -38,16 +38,25 @@ class AccountController extends Controller
     {
         $route = request('route', 'calendar');
 
-        // Check if user already has an account
+        // Check if account already exists
         $account = $this->accountRepository->findOneByField('user_id', auth()->user()->id);
 
         if ($account) {
-            // Update scopes if already connected
+            // Update scopes
             $this->accountRepository->update([
                 'scopes' => array_unique(array_merge($account->scopes ?? [], [$route])),
             ], $account->id);
 
-            if ($route === 'calendar' && $account->synchronization) {
+            // Ensure synchronization record exists
+            if (! $account->synchronization) {
+                $account->synchronization()->create([
+                    'last_synced_at' => now(),
+                    'status'         => 'pending',
+                ]);
+            }
+
+            // Optionally start syncing
+            if ($route === 'calendar') {
                 $account->synchronization->ping();
                 $account->synchronization->startListeningForChanges();
             }
@@ -68,20 +77,20 @@ class AccountController extends Controller
             return redirect($authUrl);
         }
 
-        // Step 1: Exchange code for access token
+        // Exchange code for access token
         $token = $this->google
             ->forCurrentUser()
             ->getClient()
             ->fetchAccessTokenWithAuthCode(request('code'));
 
-        // Step 2: Attach token to client
+        // Attach token to client
         $this->google->connectUsing($token);
 
-        // Step 3: Fetch Google user info
+        // Fetch user info from Google
         $googleUser = $this->google->service('Oauth2')->userinfo->get();
 
-        // Step 4: Store account with full token (including refresh_token)
-        $this->userRepository->find(auth()->user()->id)->accounts()->updateOrCreate(
+        // Store account with full token (including refresh_token)
+        $account = $this->userRepository->find(auth()->user()->id)->accounts()->updateOrCreate(
             ['google_id' => $googleUser->id],
             [
                 'name'   => $googleUser->email,
@@ -89,6 +98,14 @@ class AccountController extends Controller
                 'scopes' => [$route],
             ]
         );
+
+        // Create initial synchronization record if none exists
+        if (! $account->synchronization) {
+            $account->synchronization()->create([
+                'last_synced_at' => now(),
+                'status'         => 'pending',
+            ]);
+        }
 
         session()->put('route', $route);
 
