@@ -28,7 +28,7 @@
 
                 <!-- Add Configuration Button -->
                 <a href="{{ route('admin.google.app.index') }}" class="primary-button">
-                    @lang('google::app.calendar.index.add-configuration')
+                    @lang('google::app.calendar.index.title')
                 </a>
             </div>
 

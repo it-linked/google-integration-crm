@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Webkul\Google\Http\Controllers\AccountController;
 use Webkul\Google\Http\Controllers\CalendarController;
+use Webkul\Google\Http\Controllers\GoogleAppController;
 use Webkul\Google\Http\Controllers\MeetController;
 use Webkul\Google\Http\Controllers\WebhookController;
 
