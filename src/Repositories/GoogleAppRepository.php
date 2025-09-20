@@ -22,8 +22,8 @@ class GoogleAppRepository extends Repository
     public function findByUserId(int $userId)
     {
         return $this->model
-                    ->where('user_id', $userId)
-                    ->first();
+            ->where('user_id', $userId)
+            ->first();
     }
 
     /**
@@ -31,6 +31,9 @@ class GoogleAppRepository extends Repository
      */
     public function upsertForUser(int $userId, array $data)
     {
+        // Ensure 'user_id' is always set explicitly
+        $data['user_id'] = $userId;
+
         return $this->model->updateOrCreate(
             ['user_id' => $userId],
             $data
