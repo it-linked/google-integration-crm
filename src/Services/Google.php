@@ -4,34 +4,38 @@ namespace Webkul\Google\Services;
 
 use Webkul\Google\Models\Account;
 use Webkul\Google\Models\Calendar;
+use Webkul\Google\Repositories\GoogleAppRepository;
+use Illuminate\Support\Facades\Auth;
 
 class Google
 {
     /**
-     * Google Client object
+     * The underlying Google Client.
      *
      * @var \Google_Client
      */
     protected $client;
 
     /**
-     * Google service constructor.
+     * GoogleApp repository instance.
      *
-     * @return void
+     * @var \Webkul\Google\Repositories\GoogleAppRepository
      */
-    public function __construct()
+    protected $googleAppRepository;
+
+    /**
+     * Create a new Google service instance.
+     *
+     * @param  \Webkul\Google\Repositories\GoogleAppRepository  $googleAppRepository
+     */
+    public function __construct(GoogleAppRepository $googleAppRepository)
     {
-        $client = new \Google_Client;
+        $this->googleAppRepository = $googleAppRepository;
 
-        $client->setClientId(config('services.google.client_id'));
-        $client->setClientSecret(config('services.google.client_secret'));
-        $client->setRedirectUri(config('services.google.redirect_uri'));
-        $client->setScopes(config('services.google.scopes'));
-        $client->setApprovalPrompt(config('services.google.approval_prompt'));
-        $client->setAccessType(config('services.google.access_type'));
-        $client->setIncludeGrantedScopes(config('services.google.include_granted_scopes'));
-
-        $this->client = $client;
+        // By default, bootstrap client for the currently authenticated user.
+        if (Auth::check()) {
+            $this->bootClientForUser(Auth::id());
+        }
     }
 
     /**
@@ -47,11 +51,26 @@ class Google
     }
 
     /**
-     * Create a new Google service instance.
+     * Build the client for a specific user.
+     *
+     * @param  int  $userId
+     * @return $this
      */
-    public function service($service): mixed
+    public function forUser(int $userId): self
     {
-        $className = "Google_Service_$service";
+        $this->bootClientForUser($userId);
+
+        return $this;
+    }
+
+    /**
+     * Create a new Google service instance.
+     *
+     * Example: $google->service('Calendar')
+     */
+    public function service(string $service): mixed
+    {
+        $className = "Google_Service_{$service}";
 
         return new $className($this->client);
     }
@@ -67,7 +86,7 @@ class Google
     }
 
     /**
-     * Create a new Google service instance.
+     * Revoke an access token.
      */
     public function revokeToken(string|array|null $token = null): bool
     {
@@ -77,7 +96,7 @@ class Google
     }
 
     /**
-     * Connect to Google using the given synchronizable.
+     * Connect to Google using a synchronizable model (Account or Calendar).
      */
     public function connectWithSynchronizable(mixed $synchronizable): self
     {
@@ -87,7 +106,7 @@ class Google
     }
 
     /**
-     * Get the token from the given synchronizable.
+     * Resolve an access token from a synchronizable model.
      */
     protected function getTokenFromSynchronizable(mixed $synchronizable): mixed
     {
@@ -101,5 +120,29 @@ class Google
             default:
                 throw new \Exception('Invalid Synchronizable');
         }
+    }
+
+    /**
+     * Boot the Google client using credentials for a specific user.
+     */
+    protected function bootClientForUser(int $userId): void
+    {
+        $googleApp = $this->googleAppRepository->findByUserId($userId);
+
+        if (! $googleApp) {
+            throw new \Exception("Google App credentials not configured for user ID {$userId}.");
+        }
+
+        $client = new \Google_Client;
+
+        $client->setClientId($googleApp->client_id);
+        $client->setClientSecret($googleApp->client_secret);
+        $client->setRedirectUri($googleApp->redirect_uri);
+        $client->setScopes($googleApp->scopes ?? ['calendar']);
+        $client->setApprovalPrompt('force');
+        $client->setAccessType('offline');
+        $client->setIncludeGrantedScopes(true);
+
+        $this->client = $client;
     }
 }

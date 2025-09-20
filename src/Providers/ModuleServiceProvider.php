@@ -11,5 +11,6 @@ class ModuleServiceProvider extends BaseModuleServiceProvider
         \Webkul\Google\Models\Calendar::class,
         \Webkul\Google\Models\Event::class,
         \Webkul\Google\Models\Synchronization::class,
+        \Webkul\Google\Models\GoogleApp::class,
     ];
 }
