@@ -115,7 +115,27 @@ class AccountController extends Controller
                 ->withErrors('Failed to save Google account: ' . $e->getMessage());
         }
 
-        // Step 5: Create initial synchronization
+        // Step 5: Fetch and store Google calendars
+        try {
+            $calendarService = $this->google->service('Calendar');
+            $calendarList = $calendarService->calendarList->listCalendarList();
+
+            foreach ($calendarList->getItems() as $item) {
+                $this->calendarRepository->updateOrCreate(
+                    ['google_id' => $item->getId(), 'account_id' => $account->id],
+                    [
+                        'name' => $item->getSummary(),
+                        'timezone' => $item->getTimeZone(),
+                    ]
+                );
+            }
+
+            Log::info('Fetched and stored Google calendars', ['account_id' => $account->id]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to fetch Google calendars', ['message' => $e->getMessage()]);
+        }
+
+        // Step 6: Create initial synchronization
         try {
             if (! $account->synchronization) {
                 $account->synchronization()->create([
