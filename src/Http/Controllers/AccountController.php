@@ -35,7 +35,7 @@ class AccountController extends Controller
 
         $account = $this->accountRepository->findOneByField('user_id', auth()->user()->id);
 
-        return view('google::'.request('route').'.index', compact('account'));
+        return view('google::' . request('route') . '.index', compact('account'));
     }
 
     /**
@@ -43,43 +43,52 @@ class AccountController extends Controller
      */
     public function store(): RedirectResponse
     {
+        $route = request('route', 'calendar');
         $account = $this->accountRepository->findOneByField('user_id', auth()->user()->id);
 
         if ($account) {
+            // Update scopes if already connected
             $this->accountRepository->update([
-                'scopes' => array_merge($account->scopes ?? [], [request('route')]),
+                'scopes' => array_unique(array_merge($account->scopes ?? [], [$route])),
             ], $account->id);
 
-            if (request('route') == 'calendar') {
+            if ($route === 'calendar') {
                 $account->synchronization->ping();
                 $account->synchronization->startListeningForChanges();
             }
 
-            session()->put('route', request('route'));
-        } else {
-            if (! request()->has('code')) {
-                session()->put('route', request('route'));
+            session()->put('route', $route);
 
-                return redirect($this->google->createAuthUrl());
-            }
-
-            $this->google->authenticate(request()->get('code'));
-
-            $account = $this->google->service('Oauth2')->userinfo->get();
-
-            $this->userRepository->find(auth()->user()->id)->accounts()->updateOrCreate(
-                [
-                    'google_id' => $account->id,
-                ],
-                [
-                    'name'   => $account->email,
-                    'token'  => $this->google->getAccessToken(),
-                    'scopes' => [session()->get('route', 'calendar')],
-                ]
-            );
+            return redirect()->route('admin.google.index', ['route' => $route]);
         }
 
-        return redirect()->route('admin.google.index', ['route' => session()->get('route', 'calendar')]);
+        // If no 'code' parameter, redirect to Google OAuth
+        if (! request()->has('code')) {
+            session()->put('route', $route);
+
+            // 🔹 Boot Google client for current user before creating auth URL
+            $this->google->forCurrentUser();
+
+            return redirect($this->google->createAuthUrl());
+        }
+
+        // Exchange authorization code for access token
+        $this->google->forCurrentUser()->authenticate(request()->get('code'));
+
+        // Fetch user info from Google
+        $googleUser = $this->google->service('Oauth2')->userinfo->get();
+
+        // Store account
+        $this->userRepository->find(auth()->user()->id)->accounts()->updateOrCreate(
+            ['google_id' => $googleUser->id],
+            [
+                'name'   => $googleUser->email,
+                'token'  => $this->google->getAccessToken(),
+                'scopes' => [$route],
+            ]
+        );
+
+        return redirect()->route('admin.google.index', ['route' => $route]);
     }
 
     /**
@@ -88,11 +97,13 @@ class AccountController extends Controller
     public function destroy(int $id): RedirectResponse
     {
         $account = $this->accountRepository->findOrFail($id);
+        $route = request('route');
 
         if (count($account->scopes) > 1) {
+            // Remove just the requested route from scopes
             $scopes = $account->scopes;
 
-            if (($key = array_search(request('route'), $scopes)) !== false) {
+            if (($key = array_search($route, $scopes)) !== false) {
                 unset($scopes[$key]);
             }
 
@@ -100,11 +111,16 @@ class AccountController extends Controller
                 'scopes' => array_values($scopes),
             ], $account->id);
         } else {
+            // Delete all calendars and account
             $account->calendars->each->delete();
-
             $this->accountRepository->destroy($id);
 
-            $this->google->revokeToken($account->token);
+            // 🔹 Safely boot Google client for the user before revoking token
+            try {
+                $this->google->forUser($account->user_id)->revokeToken($account->token);
+            } catch (\Throwable $e) {
+                // Ignore errors during revoke
+            }
         }
 
         session()->flash('success', trans('google::app.account-deleted'));
