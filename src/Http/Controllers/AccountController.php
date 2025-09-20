@@ -32,35 +32,52 @@ class AccountController extends Controller
     public function store(): RedirectResponse
     {
         $route = request('route', 'calendar');
-        Log::info('Google Account store called', ['user_id' => Auth::id(), 'route' => $route, 'has_code' => request()->has('code')]);
+        $userId = Auth::id();
 
-        $account = $this->accountRepository->findOneByField('user_id', Auth::id());
+        Log::info('Google Account store called', [
+            'user_id' => $userId,
+            'route' => $route,
+            'has_code' => request()->has('code')
+        ]);
+
+        $account = $this->accountRepository->findOneByField('user_id', $userId);
         Log::info('Existing account', ['account' => $account]);
 
+        // Step 1: If no OAuth code, redirect to Google
         if (! request()->has('code')) {
             session()->put('route', $route);
 
             try {
-                $authUrl = $this->google->forCurrentUser()->getClient()->createAuthUrl();
+                $client = $this->google->forCurrentUser()->getClient();
+
+                // Add userinfo scopes dynamically
+                $scopes = $client->getScopes() ?? [];
+                $scopes = array_merge($scopes, [
+                    'https://www.googleapis.com/auth/userinfo.email',
+                    'https://www.googleapis.com/auth/userinfo.profile',
+                ]);
+                $client->setScopes(array_unique($scopes));
+
+                $authUrl = $client->createAuthUrl();
                 Log::info('Redirecting to Google OAuth URL', ['auth_url' => $authUrl]);
             } catch (\Throwable $e) {
                 Log::error('Google App not configured', ['message' => $e->getMessage()]);
                 return redirect()->route('admin.google.app.index')
-                                 ->withErrors('Please configure your Google App credentials first.');
+                    ->withErrors('Please configure your Google App credentials first.');
             }
 
             return redirect($authUrl);
         }
 
-        // Exchange code for token
+        // Step 2: Exchange code for access token
         try {
-            $googleClient = $this->google->forCurrentUser()->getClient();
-            $token = $googleClient->fetchAccessTokenWithAuthCode(request('code'));
+            $client = $this->google->forCurrentUser()->getClient();
+            $token = $client->fetchAccessTokenWithAuthCode(request('code'));
 
             if (isset($token['error'])) {
                 Log::error('Error fetching access token', ['token_error' => $token]);
                 return redirect()->route('admin.google.index', ['route' => $route])
-                                 ->withErrors('Google OAuth Error: ' . $token['error_description'] ?? $token['error']);
+                    ->withErrors('Google OAuth Error: ' . ($token['error_description'] ?? $token['error']));
             }
 
             $this->google->connectUsing($token);
@@ -68,33 +85,22 @@ class AccountController extends Controller
         } catch (\Throwable $e) {
             Log::error('Exception during token fetch', ['message' => $e->getMessage()]);
             return redirect()->route('admin.google.index', ['route' => $route])
-                             ->withErrors('Failed to fetch Google token: ' . $e->getMessage());
+                ->withErrors('Failed to fetch Google token: ' . $e->getMessage());
         }
 
-        // Fetch Google user info
+        // Step 3: Fetch Google user info
         try {
-            $client = $this->google->getClient();
-            $userinfoScopes = [
-                'https://www.googleapis.com/auth/userinfo.email',
-                'https://www.googleapis.com/auth/userinfo.profile',
-            ];
-
-            $missingScopes = array_diff($userinfoScopes, $client->getScopes() ?? []);
-            if (!empty($missingScopes)) {
-                $client->addScope($missingScopes);
-            }
-
             $googleUser = $this->google->service('Oauth2')->userinfo->get();
             Log::info('Google user info fetched', ['google_user' => $googleUser]);
         } catch (\Throwable $e) {
             Log::error('Failed to fetch Google user info', ['message' => $e->getMessage()]);
             return redirect()->route('admin.google.index', ['route' => $route])
-                             ->withErrors('Failed to fetch Google user info: ' . $e->getMessage());
+                ->withErrors('Failed to fetch Google user info: ' . $e->getMessage());
         }
 
-        // Save or update account
+        // Step 4: Store or update account
         try {
-            $account = $this->userRepository->find(Auth::id())->accounts()->updateOrCreate(
+            $account = $this->userRepository->find($userId)->accounts()->updateOrCreate(
                 ['google_id' => $googleUser->id],
                 [
                     'name'   => $googleUser->email,
@@ -106,10 +112,10 @@ class AccountController extends Controller
         } catch (\Throwable $e) {
             Log::error('Failed to save Google account', ['message' => $e->getMessage()]);
             return redirect()->route('admin.google.index', ['route' => $route])
-                             ->withErrors('Failed to save Google account: ' . $e->getMessage());
+                ->withErrors('Failed to save Google account: ' . $e->getMessage());
         }
 
-        // Create initial synchronization
+        // Step 5: Create initial synchronization
         try {
             if (! $account->synchronization) {
                 $account->synchronization()->create([
@@ -131,7 +137,7 @@ class AccountController extends Controller
         session()->put('route', $route);
 
         return redirect()->route('admin.google.index', ['route' => $route])
-                         ->with('success', 'Google account connected successfully.');
+            ->with('success', 'Google account connected successfully.');
     }
 
     public function destroy(int $id): RedirectResponse
