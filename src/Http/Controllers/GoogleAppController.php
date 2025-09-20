@@ -46,8 +46,15 @@ class GoogleAppController extends Controller
             'client_secret' => 'required|string',
             'redirect_uri'  => 'nullable|url',
             'webhook_uri'   => 'nullable|url',
-            'scopes'        => 'nullable|array',
+            'scopes'        => 'nullable|string',
         ]);
+
+        // Convert comma-separated string to array
+        if (!empty($data['scopes'])) {
+            $data['scopes'] = array_map('trim', explode(',', $data['scopes']));
+        } else {
+            $data['scopes'] = [];
+        }
 
         Log::info('Validated data', $data);
 

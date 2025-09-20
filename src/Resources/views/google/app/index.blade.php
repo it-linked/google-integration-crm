@@ -12,12 +12,7 @@
                     @lang('google::app.app.index.client-id')
                 </x-admin::form.control-group.label>
 
-                <x-admin::form.control-group.control
-                    type="text"
-                    name="client_id"
-                    :value="$googleApp->client_id ?? ''"
-                    rules="required"
-                />
+                <x-admin::form.control-group.control type="text" name="client_id" :value="$googleApp->client_id ?? ''" rules="required" />
             </x-admin::form.control-group>
 
             <x-admin::form.control-group>
@@ -25,12 +20,8 @@
                     @lang('google::app.app.index.client-secret')
                 </x-admin::form.control-group.label>
 
-                <x-admin::form.control-group.control
-                    type="text"
-                    name="client_secret"
-                    :value="$googleApp->client_secret ?? ''"
-                    rules="required"
-                />
+                <x-admin::form.control-group.control type="text" name="client_secret" :value="$googleApp->client_secret ?? ''"
+                    rules="required" />
             </x-admin::form.control-group>
 
             <x-admin::form.control-group>
@@ -38,11 +29,7 @@
                     @lang('google::app.app.index.redirect-uri')
                 </x-admin::form.control-group.label>
 
-                <x-admin::form.control-group.control
-                    type="text"
-                    name="redirect_uri"
-                    :value="$googleApp->redirect_uri ?? ''"
-                />
+                <x-admin::form.control-group.control type="text" name="redirect_uri" :value="$googleApp->redirect_uri ?? ''" />
             </x-admin::form.control-group>
 
             <x-admin::form.control-group>
@@ -50,11 +37,7 @@
                     @lang('google::app.app.index.webhook-uri')
                 </x-admin::form.control-group.label>
 
-                <x-admin::form.control-group.control
-                    type="text"
-                    name="webhook_uri"
-                    :value="$googleApp->webhook_uri ?? ''"
-                />
+                <x-admin::form.control-group.control type="text" name="webhook_uri" :value="$googleApp->webhook_uri ?? ''" />
             </x-admin::form.control-group>
 
             <x-admin::form.control-group>
@@ -62,12 +45,9 @@
                     @lang('google::app.app.index.scopes')
                 </x-admin::form.control-group.label>
 
-                <x-admin::form.control-group.control
-                    type="text"
-                    name="scopes"
-                    :value="isset($googleApp->scopes) ? implode(',', $googleApp->scopes) : ''"
-                    placeholder="calendar,meet"
-                />
+                <x-admin::form.control-group.control type="text" name="scopes" :value="isset($googleApp->scopes) ? implode(',', $googleApp->scopes) : ''"
+                    placeholder="calendar,meet" />
+
             </x-admin::form.control-group>
 
             <button type="submit" class="primary-button mt-4">
@@ -77,18 +57,11 @@
 
         @if ($googleApp)
             <!-- Remove Configuration -->
-            <form
-                action="{{ route('admin.google.app.destroy', $googleApp->id) }}"
-                method="POST"
-                class="mt-4"
-            >
+            <form action="{{ route('admin.google.app.destroy', $googleApp->id) }}" method="POST" class="mt-4">
                 @csrf
                 @method('DELETE')
 
-                <button
-                    type="submit"
-                    class="text-red-500 hover:underline"
-                >
+                <button type="submit" class="text-red-500 hover:underline">
                     @lang('google::app.app.index.remove')
                 </button>
             </form>
