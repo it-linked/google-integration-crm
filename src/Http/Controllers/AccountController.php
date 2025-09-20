@@ -8,9 +8,9 @@ use Webkul\Google\Repositories\AccountRepository;
 use Webkul\Google\Repositories\CalendarRepository;
 use Webkul\Google\Services\Google;
 use Webkul\User\Repositories\UserRepository;
-use RuntimeException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 class AccountController extends Controller
 {
@@ -39,54 +39,42 @@ class AccountController extends Controller
             'has_code' => request()->has('code'),
         ]);
 
-        // Check if account already exists
         $account = $this->accountRepository->findOneByField('user_id', auth()->id());
         Log::info('Existing account', ['account' => $account]);
 
         if ($account) {
-            // Update scopes if needed
             $scopes = array_unique(array_merge($account->scopes ?? [], [$route]));
             $this->accountRepository->update(['scopes' => $scopes], $account->id);
 
-            // Sync calendars if route is calendar
             if ($route === 'calendar') {
                 try {
-                    $account->synchronize(); // dispatches the SynchronizeCalendars job
+                    $account->synchronize();
                 } catch (\Throwable $e) {
                     Log::error('Failed to synchronize calendars', ['message' => $e->getMessage()]);
                 }
             }
 
             session()->put('route', $route);
-
             return redirect()->route('admin.google.index', ['route' => $route]);
         }
 
-        // If no OAuth code, redirect to Google
+        // Step 1: Redirect to Google OAuth
         if (! request()->has('code')) {
             session()->put('route', $route);
 
-            $authUrl = $this->google
-                ->forCurrentUser()
-                ->createAuthUrl();
-
+            $authUrl = $this->google->forCurrentUser()->getClient()->createAuthUrl();
             Log::info('Redirecting to Google OAuth URL', ['auth_url' => $authUrl]);
 
             return redirect($authUrl);
         }
 
-        // Exchange code for access token
-        $token = $this->google
-            ->forCurrentUser()
-            ->getClient()
-            ->fetchAccessTokenWithAuthCode(request('code'));
+        // Step 2: Exchange code for token
+        $token = $this->google->forCurrentUser()->getClient()->fetchAccessTokenWithAuthCode(request('code'));
+        Log::info('Access token fetched', ['token' => $token]);
 
-        Log::info('Access token fetched successfully', ['token' => $token]);
-
-        // Attach token to client
         $this->google->connectUsing($token);
 
-        // Fetch user info from Google
+        // Step 3: Fetch Google user info
         try {
             $googleUser = $this->google->service('Oauth2')->userinfo->get();
             Log::info('Google user info fetched', ['google_user' => $googleUser]);
@@ -95,7 +83,7 @@ class AccountController extends Controller
             return back()->withErrors(['error' => 'Failed to fetch Google user info.'])->withInput();
         }
 
-        // Store account with full token (including refresh_token)
+        // Step 4: Save account
         try {
             $account = $this->userRepository->find(auth()->id())->accounts()->updateOrCreate(
                 ['google_id' => $googleUser->id],
@@ -106,12 +94,12 @@ class AccountController extends Controller
                 ]
             );
 
-            // Dispatch calendar synchronization immediately
             if ($route === 'calendar') {
-                $account->synchronize(); // dispatches SynchronizeCalendars job
+                $account->synchronize();
             }
 
             session()->put('route', $route);
+
         } catch (\Throwable $e) {
             Log::error('Failed to save Google account', ['message' => $e->getMessage()]);
             return back()->withErrors(['error' => 'Failed to save Google account.'])->withInput();

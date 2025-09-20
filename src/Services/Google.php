@@ -19,9 +19,6 @@ class Google
         $this->googleAppRepository = $googleAppRepository;
     }
 
-    /**
-     * Dynamically call methods on the Google client
-     */
     public function __call($method, $args): mixed
     {
         if (! $this->client || ! method_exists($this->client, $method)) {
@@ -31,9 +28,6 @@ class Google
         return $this->client->{$method}(...$args);
     }
 
-    /**
-     * Boot client for a specific user
-     */
     public function forUser(int $userId): self
     {
         $googleApp = $this->googleAppRepository->findByUserId($userId);
@@ -50,6 +44,8 @@ class Google
         $scopeMap = [
             'calendar' => 'https://www.googleapis.com/auth/calendar',
             'meet'     => 'https://www.googleapis.com/auth/calendar.events',
+            'userinfo.email' => 'https://www.googleapis.com/auth/userinfo.email',
+            'userinfo.profile' => 'https://www.googleapis.com/auth/userinfo.profile',
         ];
 
         $scopes = $googleApp->scopes ?? ['calendar'];
@@ -65,9 +61,6 @@ class Google
         return $this;
     }
 
-    /**
-     * Boot client for current authenticated user
-     */
     public function forCurrentUser(): self
     {
         if (! Auth::check()) {
@@ -77,9 +70,6 @@ class Google
         return $this->forUser(Auth::id());
     }
 
-    /**
-     * Connect client using stored token
-     */
     public function connectUsing(array|string $token): self
     {
         if (! $this->client) {
@@ -88,7 +78,6 @@ class Google
 
         $this->client->setAccessToken($token);
 
-        // Auto-refresh token if expired
         if ($this->client->isAccessTokenExpired() && $this->client->getRefreshToken()) {
             $newToken = $this->client->fetchAccessTokenWithRefreshToken($this->client->getRefreshToken());
             $this->client->setAccessToken($newToken);
@@ -97,9 +86,6 @@ class Google
         return $this;
     }
 
-    /**
-     * Revoke token
-     */
     public function revokeToken(array|string|null $token = null): bool
     {
         if (! $this->client) {
@@ -110,9 +96,6 @@ class Google
         return $this->client->revokeToken($token);
     }
 
-    /**
-     * Create a Google service instance
-     */
     public function service(string $service): mixed
     {
         if (! $this->client) {
@@ -127,17 +110,11 @@ class Google
         return new $className($this->client);
     }
 
-    /**
-     * Connect using an Account or Calendar model
-     */
     public function connectWithSynchronizable(mixed $model): self
     {
         return $this->connectUsing($this->getTokenFromSynchronizable($model));
     }
 
-    /**
-     * Get token from an Account or Calendar
-     */
     protected function getTokenFromSynchronizable(mixed $model): mixed
     {
         return match (true) {
@@ -147,9 +124,6 @@ class Google
         };
     }
 
-    /**
-     * Get underlying Google_Client
-     */
     public function getClient(): \Google_Client
     {
         if (! $this->client) {
