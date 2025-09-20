@@ -41,14 +41,20 @@ class GoogleAppController extends Controller
             'user_id' => Auth::id(),
         ]);
 
-        // Validate
         $data = request()->validate([
             'client_id'     => 'required|string',
             'client_secret' => 'required|string',
             'redirect_uri'  => 'nullable|url',
             'webhook_uri'   => 'nullable|url',
-            'scopes'        => 'nullable|array',
+            'scopes'        => 'nullable|string', // change to string
         ]);
+
+        // Convert scopes string to array
+        if (!empty($data['scopes'])) {
+            $data['scopes'] = array_map('trim', explode(',', $data['scopes']));
+        } else {
+            $data['scopes'] = [];
+        }
 
         // Log validated data
         Log::info('Validated data', $data);
