@@ -6,8 +6,8 @@ use Webkul\Google\Models\Account;
 use Webkul\Google\Models\Calendar;
 use Webkul\Google\Repositories\GoogleAppRepository;
 use Illuminate\Support\Facades\Auth;
-use InvalidArgumentException;
 use RuntimeException;
+use InvalidArgumentException;
 
 class Google
 {
@@ -19,6 +19,9 @@ class Google
         $this->googleAppRepository = $googleAppRepository;
     }
 
+    /**
+     * Dynamically call methods on the Google client
+     */
     public function __call($method, $args): mixed
     {
         if (! $this->client || ! method_exists($this->client, $method)) {
@@ -28,12 +31,43 @@ class Google
         return $this->client->{$method}(...$args);
     }
 
+    /**
+     * Boot client for a specific user
+     */
     public function forUser(int $userId): self
     {
-        $this->bootClientForUser($userId);
+        $googleApp = $this->googleAppRepository->findByUserId($userId);
+
+        if (! $googleApp) {
+            throw new RuntimeException("Google App credentials not configured for user ID {$userId}.");
+        }
+
+        $client = new \Google_Client();
+        $client->setClientId($googleApp->client_id);
+        $client->setClientSecret($googleApp->client_secret);
+        $client->setRedirectUri($googleApp->redirect_uri);
+
+        // Map friendly names to Google scopes
+        $scopeMap = [
+            'calendar' => 'https://www.googleapis.com/auth/calendar',
+            'meet'     => 'https://www.googleapis.com/auth/calendar.events',
+        ];
+
+        $scopes = $googleApp->scopes ?? ['calendar'];
+        $scopes = array_map(fn($s) => $scopeMap[$s] ?? $s, $scopes);
+        $client->setScopes($scopes);
+        $client->setAccessType('offline');
+        $client->setApprovalPrompt('force');
+        $client->setIncludeGrantedScopes(true);
+
+        $this->client = $client;
+
         return $this;
     }
 
+    /**
+     * Boot client for current authenticated user
+     */
     public function forCurrentUser(): self
     {
         if (! Auth::check()) {
@@ -43,6 +77,42 @@ class Google
         return $this->forUser(Auth::id());
     }
 
+    /**
+     * Connect client using stored token
+     */
+    public function connectUsing(array|string $token): self
+    {
+        if (! $this->client) {
+            throw new RuntimeException('Google client not booted.');
+        }
+
+        $this->client->setAccessToken($token);
+
+        // Auto-refresh if expired and refresh token exists
+        if ($this->client->isAccessTokenExpired() && $this->client->getRefreshToken()) {
+            $newToken = $this->client->fetchAccessTokenWithRefreshToken($this->client->getRefreshToken());
+            $this->client->setAccessToken($newToken);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Revoke a token
+     */
+    public function revokeToken(array|string|null $token = null): bool
+    {
+        if (! $this->client) {
+            throw new RuntimeException('Google client not booted.');
+        }
+
+        $token = $token ?? $this->client->getAccessToken();
+        return $this->client->revokeToken($token);
+    }
+
+    /**
+     * Create a Google service instance (e.g., Oauth2, Calendar)
+     */
     public function service(string $service): mixed
     {
         if (! $this->client) {
@@ -57,32 +127,17 @@ class Google
         return new $className($this->client);
     }
 
-    public function connectUsing(string|array $token): self
+    /**
+     * Connect using an Account or Calendar model
+     */
+    public function connectWithSynchronizable(mixed $model): self
     {
-        if (! $this->client) {
-            throw new RuntimeException('Google client not booted.');
-        }
-
-        $this->client->setAccessToken($token);
-
-        if ($this->client->isAccessTokenExpired() && $this->client->getRefreshToken()) {
-            $newToken = $this->client->fetchAccessTokenWithRefreshToken($this->client->getRefreshToken());
-            $this->client->setAccessToken($newToken);
-        }
-
-        return $this;
+        return $this->connectUsing($this->getTokenFromSynchronizable($model));
     }
 
-    public function revokeToken(string|array|null $token = null): bool
-    {
-        if (! $this->client) {
-            throw new RuntimeException('Google client not booted.');
-        }
-
-        $token = $token ?? $this->client->getAccessToken();
-        return $this->client->revokeToken($token);
-    }
-
+    /**
+     * Get token from an Account or Calendar
+     */
     protected function getTokenFromSynchronizable(mixed $model): mixed
     {
         return match (true) {
@@ -92,37 +147,15 @@ class Google
         };
     }
 
-    protected function bootClientForUser(int $userId): void
+    /**
+     * Get underlying Google_Client
+     */
+    public function getClient(): \Google_Client
     {
-        $googleApp = $this->googleAppRepository->findByUserId($userId);
-
-        if (! $googleApp) {
-            throw new RuntimeException("Google App credentials not configured for user ID {$userId}.");
+        if (! $this->client) {
+            throw new RuntimeException('Google client not booted.');
         }
 
-        $client = new \Google_Client();
-        $client->setClientId($googleApp->client_id);
-        $client->setClientSecret($googleApp->client_secret);
-        $client->setRedirectUri($googleApp->redirect_uri);
-
-        // Map friendly names to actual Google scopes
-        $scopeMap = [
-            'calendar' => 'https://www.googleapis.com/auth/calendar',
-            'meet'     => 'https://www.googleapis.com/auth/calendar.events',
-        ];
-
-        $scopes = $googleApp->scopes ?? ['calendar'];
-        $scopes = array_map(fn($s) => $scopeMap[$s] ?? $s, $scopes);
-
-        if (empty($scopes)) {
-            $scopes = ['https://www.googleapis.com/auth/calendar'];
-        }
-
-        $client->setScopes($scopes);
-        $client->setApprovalPrompt('force');
-        $client->setAccessType('offline');
-        $client->setIncludeGrantedScopes(true);
-
-        $this->client = $client;
+        return $this->client;
     }
 }
