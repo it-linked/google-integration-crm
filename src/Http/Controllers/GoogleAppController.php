@@ -53,7 +53,7 @@ class GoogleAppController extends Controller
         if (!empty($data['scopes'])) {
             $data['scopes'] = array_map('trim', explode(',', $data['scopes']));
         } else {
-            $data['scopes'] = [];
+            $data['scopes'] = []; // always store as array
         }
 
         Log::info('Validated data', $data);
