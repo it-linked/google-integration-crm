@@ -32,75 +32,72 @@ class AccountController extends Controller
     public function store(): RedirectResponse
     {
         $route = request('route', 'calendar');
-        $userId = Auth::id();
 
         Log::info('Google Account store called', [
-            'user_id' => $userId,
-            'route' => $route,
-            'has_code' => request()->has('code')
+            'user_id' => auth()->id(),
+            'route'   => $route,
+            'has_code' => request()->has('code'),
         ]);
 
-        $account = $this->accountRepository->findOneByField('user_id', $userId);
+        // Check if account already exists
+        $account = $this->accountRepository->findOneByField('user_id', auth()->id());
         Log::info('Existing account', ['account' => $account]);
 
-        // Step 1: If no OAuth code, redirect to Google
+        if ($account) {
+            // Update scopes if needed
+            $scopes = array_unique(array_merge($account->scopes ?? [], [$route]));
+            $this->accountRepository->update(['scopes' => $scopes], $account->id);
+
+            // Sync calendars if route is calendar
+            if ($route === 'calendar') {
+                try {
+                    $account->synchronize(); // dispatches the SynchronizeCalendars job
+                } catch (\Throwable $e) {
+                    Log::error('Failed to synchronize calendars', ['message' => $e->getMessage()]);
+                }
+            }
+
+            session()->put('route', $route);
+
+            return redirect()->route('admin.google.index', ['route' => $route]);
+        }
+
+        // If no OAuth code, redirect to Google
         if (! request()->has('code')) {
             session()->put('route', $route);
 
-            try {
-                $client = $this->google->forCurrentUser()->getClient();
+            $authUrl = $this->google
+                ->forCurrentUser()
+                ->createAuthUrl();
 
-                // Add userinfo scopes dynamically
-                $scopes = $client->getScopes() ?? [];
-                $scopes = array_merge($scopes, [
-                    'https://www.googleapis.com/auth/userinfo.email',
-                    'https://www.googleapis.com/auth/userinfo.profile',
-                ]);
-                $client->setScopes(array_unique($scopes));
-
-                $authUrl = $client->createAuthUrl();
-                Log::info('Redirecting to Google OAuth URL', ['auth_url' => $authUrl]);
-            } catch (\Throwable $e) {
-                Log::error('Google App not configured', ['message' => $e->getMessage()]);
-                return redirect()->route('admin.google.app.index')
-                    ->withErrors('Please configure your Google App credentials first.');
-            }
+            Log::info('Redirecting to Google OAuth URL', ['auth_url' => $authUrl]);
 
             return redirect($authUrl);
         }
 
-        // Step 2: Exchange code for access token
-        try {
-            $client = $this->google->forCurrentUser()->getClient();
-            $token = $client->fetchAccessTokenWithAuthCode(request('code'));
+        // Exchange code for access token
+        $token = $this->google
+            ->forCurrentUser()
+            ->getClient()
+            ->fetchAccessTokenWithAuthCode(request('code'));
 
-            if (isset($token['error'])) {
-                Log::error('Error fetching access token', ['token_error' => $token]);
-                return redirect()->route('admin.google.index', ['route' => $route])
-                    ->withErrors('Google OAuth Error: ' . ($token['error_description'] ?? $token['error']));
-            }
+        Log::info('Access token fetched successfully', ['token' => $token]);
 
-            $this->google->connectUsing($token);
-            Log::info('Access token fetched successfully', ['token' => $token]);
-        } catch (\Throwable $e) {
-            Log::error('Exception during token fetch', ['message' => $e->getMessage()]);
-            return redirect()->route('admin.google.index', ['route' => $route])
-                ->withErrors('Failed to fetch Google token: ' . $e->getMessage());
-        }
+        // Attach token to client
+        $this->google->connectUsing($token);
 
-        // Step 3: Fetch Google user info
+        // Fetch user info from Google
         try {
             $googleUser = $this->google->service('Oauth2')->userinfo->get();
             Log::info('Google user info fetched', ['google_user' => $googleUser]);
         } catch (\Throwable $e) {
             Log::error('Failed to fetch Google user info', ['message' => $e->getMessage()]);
-            return redirect()->route('admin.google.index', ['route' => $route])
-                ->withErrors('Failed to fetch Google user info: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to fetch Google user info.'])->withInput();
         }
 
-        // Step 4: Store or update account
+        // Store account with full token (including refresh_token)
         try {
-            $account = $this->userRepository->find($userId)->accounts()->updateOrCreate(
+            $account = $this->userRepository->find(auth()->id())->accounts()->updateOrCreate(
                 ['google_id' => $googleUser->id],
                 [
                     'name'   => $googleUser->email,
@@ -108,56 +105,19 @@ class AccountController extends Controller
                     'scopes' => [$route],
                 ]
             );
-            Log::info('Google account saved', ['account_id' => $account->id]);
+
+            // Dispatch calendar synchronization immediately
+            if ($route === 'calendar') {
+                $account->synchronize(); // dispatches SynchronizeCalendars job
+            }
+
+            session()->put('route', $route);
         } catch (\Throwable $e) {
             Log::error('Failed to save Google account', ['message' => $e->getMessage()]);
-            return redirect()->route('admin.google.index', ['route' => $route])
-                ->withErrors('Failed to save Google account: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to save Google account.'])->withInput();
         }
 
-        // Step 5: Fetch and store Google calendars
-        try {
-            $calendarService = $this->google->service('Calendar');
-            $calendarList = $calendarService->calendarList->listCalendarList();
-
-            foreach ($calendarList->getItems() as $item) {
-                $this->calendarRepository->updateOrCreate(
-                    ['google_id' => $item->getId(), 'account_id' => $account->id],
-                    [
-                        'name' => $item->getSummary(),
-                        'timezone' => $item->getTimeZone(),
-                    ]
-                );
-            }
-
-            Log::info('Fetched and stored Google calendars', ['account_id' => $account->id]);
-        } catch (\Throwable $e) {
-            Log::error('Failed to fetch Google calendars', ['message' => $e->getMessage()]);
-        }
-
-        // Step 6: Create initial synchronization
-        try {
-            if (! $account->synchronization) {
-                $account->synchronization()->create([
-                    'last_synced_at' => now(),
-                    'status'         => 'pending',
-                ]);
-                Log::info('Google synchronization created', ['account_id' => $account->id]);
-            }
-
-            if ($route === 'calendar') {
-                $account->synchronization->ping();
-                $account->synchronization->startListeningForChanges();
-                Log::info('Started calendar sync', ['account_id' => $account->id]);
-            }
-        } catch (\Throwable $e) {
-            Log::error('Failed during synchronization setup', ['message' => $e->getMessage()]);
-        }
-
-        session()->put('route', $route);
-
-        return redirect()->route('admin.google.index', ['route' => $route])
-            ->with('success', 'Google account connected successfully.');
+        return redirect()->route('admin.google.index', ['route' => $route]);
     }
 
     public function destroy(int $id): RedirectResponse
