@@ -8,6 +8,7 @@ use Webkul\Google\Contracts\GoogleApp as GoogleAppContract;
 
 class GoogleApp extends Model implements GoogleAppContract
 {
+    protected $connection = 'tenant';
     protected $table = 'google_apps';
 
     protected $fillable = [
