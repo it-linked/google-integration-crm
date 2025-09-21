@@ -6,6 +6,7 @@ use Google_Client;
 use Webkul\Google\Models\Account;
 use Webkul\Google\Models\Calendar;
 use Webkul\Google\Repositories\GoogleAppRepository;
+use Webkul\Google\Repositories\AccountRepository;
 use RuntimeException;
 use BadMethodCallException;
 
@@ -15,13 +16,10 @@ class Google
     protected ?Google_Client $client = null;
 
     public function __construct(
-        protected GoogleAppRepository $googleAppRepository
+        protected GoogleAppRepository $googleAppRepository,
+        protected AccountRepository $accountRepository  // inject repository to save refreshed tokens
     ) {}
 
-    /* -----------------------------------------------------------------
-     |  Lazy initializers
-     | -----------------------------------------------------------------
-     */
     protected function initGoogleApp(): void
     {
         if ($this->googleApp) return;
@@ -44,17 +42,12 @@ class Google
         $client->setClientSecret($this->googleApp->client_secret);
         $client->setRedirectUri($this->googleApp->redirect_uri);
         $client->setScopes($this->googleApp->scopes ?: []);
-        $client->setAccessType(config('services.google.access_type', 'offline'));
-        $client->setApprovalPrompt(config('services.google.approval_prompt', 'force'));
-        $client->setIncludeGrantedScopes(config('services.google.include_granted_scopes', true));
+        $client->setAccessType('offline');   // ensures refresh token
+        $client->setPrompt('consent');       // forces consent for refresh token
+        $client->setIncludeGrantedScopes(true);
 
         $this->client = $client;
     }
-
-    /* -----------------------------------------------------------------
-     |  Public API
-     | -----------------------------------------------------------------
-     */
 
     public function __call($method, $args): mixed
     {
@@ -70,20 +63,17 @@ class Google
     public function service(string $service): mixed
     {
         $this->initClient();
-        $this->refreshIfExpired();
+        $this->refreshIfExpired();  // ensures token is valid
         $className = "Google_Service_{$service}";
 
         return new $className($this->client);
     }
 
-    /**
-     * Exchange authorization code for access token and set it.
-     */
     public function authenticate(string $code): array
     {
         $this->initClient();
-        $token = $this->client->fetchAccessTokenWithAuthCode($code);
 
+        $token = $this->client->fetchAccessTokenWithAuthCode($code);
         if (isset($token['error'])) {
             throw new RuntimeException('Google token exchange failed: ' . $token['error']);
         }
@@ -107,17 +97,25 @@ class Google
     }
 
     /**
-     * Refresh the access token if expired.
+     * Refresh access token if expired and save updated token to DB.
      */
-    public function refreshIfExpired(): void
+    public function refreshIfExpired(Account $account = null): void
     {
         if (! $this->client) return;
 
         if ($this->client->isAccessTokenExpired()) {
             $refreshToken = $this->client->getRefreshToken();
+
             if ($refreshToken) {
                 $newToken = $this->client->fetchAccessTokenWithRefreshToken($refreshToken);
                 $this->client->setAccessToken(array_merge($this->client->getAccessToken(), $newToken));
+
+                // ✅ Save refreshed token back to DB
+                if ($account) {
+                    $this->accountRepository->update([
+                        'token' => $this->client->getAccessToken(),
+                    ], $account->id);
+                }
             } else {
                 throw new RuntimeException('Access token expired and no refresh token available.');
             }
@@ -127,7 +125,9 @@ class Google
     public function connectWithSynchronizable(mixed $synchronizable): self
     {
         $token = $this->getTokenFromSynchronizable($synchronizable);
-        return $this->connectUsing($token);
+        $this->connectUsing($token);
+        $this->refreshIfExpired($synchronizable instanceof Account ? $synchronizable : $synchronizable->account);
+        return $this;
     }
 
     protected function getTokenFromSynchronizable(mixed $synchronizable): array
@@ -142,7 +142,6 @@ class Google
     public function client(): Google_Client
     {
         $this->initClient();
-        $this->refreshIfExpired();
         return $this->client;
     }
 

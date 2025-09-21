@@ -49,20 +49,21 @@ class AccountController extends Controller
                 return redirect($this->google->client()->createAuthUrl());
             }
 
-            // ✅ Exchange code for token
             $token = $this->google->authenticate(request()->get('code'));
 
-            // ✅ Get user info
             $userInfo = $this->google->service('Oauth2')->userinfo->get();
 
-            $this->userRepository->find(auth()->user()->id)->accounts()->updateOrCreate(
+            $account = $this->userRepository->find(auth()->user()->id)->accounts()->updateOrCreate(
                 [ 'google_id' => $userInfo->id ],
                 [
                     'name'   => $userInfo->email,
-                    'token'  => $token, // store full token
+                    'token'  => $token,
                     'scopes' => [session()->get('route', 'calendar')],
                 ]
             );
+
+            // ✅ Connect and auto-refresh token if needed
+            $this->google->connectWithSynchronizable($account);
         }
 
         return redirect()->route('admin.google.index', ['route' => session()->get('route', 'calendar')]);
