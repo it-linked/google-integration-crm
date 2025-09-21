@@ -4,7 +4,6 @@ namespace Webkul\Google\Services;
 
 use Google_Client;
 use Webkul\Google\Models\Account;
-use Webkul\Google\Models\Calendar;
 use Webkul\Google\Repositories\GoogleAppRepository;
 use Webkul\Google\Repositories\AccountRepository;
 use RuntimeException;
@@ -45,13 +44,20 @@ class Google
         $client->setClientId($this->googleApp->client_id);
         $client->setClientSecret($this->googleApp->client_secret);
         $client->setRedirectUri($this->googleApp->redirect_uri);
-        $client->setScopes($this->googleApp->scopes ?: []);
-        $client->setAccessType('offline');
-        $client->setPrompt('consent');
+
+        // ✅ Scopes include both calendar + userinfo
+        $client->setScopes([
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/calendar.events',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile',
+        ]);
+
+        $client->setAccessType('offline');   // ensures refresh token
+        $client->setPrompt('consent');       // forces consent
         $client->setIncludeGrantedScopes(true);
 
         $this->client = $client;
-
         Log::info('Google Client initialized');
     }
 
@@ -73,7 +79,6 @@ class Google
         $this->initClient();
         $this->refreshIfExpired();
         $className = "Google_Service_{$service}";
-
         Log::info("Creating Google service instance: {$className}");
         return new $className($this->client);
     }
@@ -81,7 +86,6 @@ class Google
     public function authenticate(string $code): array
     {
         $this->initClient();
-
         $token = $this->client->fetchAccessTokenWithAuthCode($code);
 
         if (isset($token['error'])) {
@@ -110,6 +114,9 @@ class Google
         return $this->client->revokeToken($token);
     }
 
+    /**
+     * Refresh access token if expired and save updated token to DB.
+     */
     public function refreshIfExpired(Account $account = null): void
     {
         if (! $this->client) return;
@@ -149,7 +156,6 @@ class Google
     {
         return match (true) {
             $synchronizable instanceof Account  => $synchronizable->token,
-            $synchronizable instanceof Calendar => $synchronizable->account->token,
             default => throw new RuntimeException('Invalid synchronizable type.'),
         };
     }
