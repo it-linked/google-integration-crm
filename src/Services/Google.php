@@ -9,6 +9,7 @@ use Webkul\Google\Repositories\GoogleAppRepository;
 use Webkul\Google\Repositories\AccountRepository;
 use RuntimeException;
 use BadMethodCallException;
+use Illuminate\Support\Facades\Log;
 
 class Google
 {
@@ -17,7 +18,7 @@ class Google
 
     public function __construct(
         protected GoogleAppRepository $googleAppRepository,
-        protected AccountRepository $accountRepository  // inject repository to save refreshed tokens
+        protected AccountRepository $accountRepository
     ) {}
 
     protected function initGoogleApp(): void
@@ -27,8 +28,11 @@ class Google
         $this->googleApp = $this->googleAppRepository->first();
 
         if (! $this->googleApp) {
-            throw new RuntimeException('Google App configuration not found. Please set it up first.');
+            Log::error('Google App configuration not found.');
+            throw new RuntimeException('Google App configuration not found.');
         }
+
+        Log::info('Google App initialized', ['client_id' => $this->googleApp->client_id]);
     }
 
     protected function initClient(): void
@@ -42,11 +46,13 @@ class Google
         $client->setClientSecret($this->googleApp->client_secret);
         $client->setRedirectUri($this->googleApp->redirect_uri);
         $client->setScopes($this->googleApp->scopes ?: []);
-        $client->setAccessType('offline');   // ensures refresh token
-        $client->setPrompt('consent');       // forces consent for refresh token
+        $client->setAccessType('offline');
+        $client->setPrompt('consent');
         $client->setIncludeGrantedScopes(true);
 
         $this->client = $client;
+
+        Log::info('Google Client initialized');
     }
 
     public function __call($method, $args): mixed
@@ -54,18 +60,21 @@ class Google
         $this->initClient();
 
         if (! method_exists($this->client, $method)) {
+            Log::error("Attempted to call undefined method {$method}");
             throw new BadMethodCallException("Call to undefined method '{$method}'");
         }
 
+        Log::info("Calling Google_Client method: {$method}");
         return $this->client->{$method}(...$args);
     }
 
     public function service(string $service): mixed
     {
         $this->initClient();
-        $this->refreshIfExpired();  // ensures token is valid
+        $this->refreshIfExpired();
         $className = "Google_Service_{$service}";
 
+        Log::info("Creating Google service instance: {$className}");
         return new $className($this->client);
     }
 
@@ -74,11 +83,14 @@ class Google
         $this->initClient();
 
         $token = $this->client->fetchAccessTokenWithAuthCode($code);
+
         if (isset($token['error'])) {
+            Log::error('Google token exchange failed', ['error' => $token['error']]);
             throw new RuntimeException('Google token exchange failed: ' . $token['error']);
         }
 
         $this->client->setAccessToken($token);
+        Log::info('Google token successfully retrieved', ['token' => $token]);
         return $token;
     }
 
@@ -86,6 +98,7 @@ class Google
     {
         $this->initClient();
         $this->client->setAccessToken($token);
+        Log::info('Connected using token', ['token' => $token]);
         return $this;
     }
 
@@ -93,12 +106,10 @@ class Google
     {
         $this->initClient();
         $token = $token ?? $this->client->getAccessToken();
+        Log::info('Revoking token', ['token' => $token]);
         return $this->client->revokeToken($token);
     }
 
-    /**
-     * Refresh access token if expired and save updated token to DB.
-     */
     public function refreshIfExpired(Account $account = null): void
     {
         if (! $this->client) return;
@@ -110,13 +121,17 @@ class Google
                 $newToken = $this->client->fetchAccessTokenWithRefreshToken($refreshToken);
                 $this->client->setAccessToken(array_merge($this->client->getAccessToken(), $newToken));
 
-                // ✅ Save refreshed token back to DB
+                Log::info('Token refreshed successfully', ['newToken' => $newToken]);
+
                 if ($account) {
                     $this->accountRepository->update([
                         'token' => $this->client->getAccessToken(),
                     ], $account->id);
+
+                    Log::info('Refreshed token saved to database', ['account_id' => $account->id]);
                 }
             } else {
+                Log::warning('Access token expired and no refresh token available.');
                 throw new RuntimeException('Access token expired and no refresh token available.');
             }
         }
