@@ -11,7 +11,7 @@ Route::group([
     'prefix'     => 'admin/google',
     'middleware' => ['web'],
 ], function () {
-    Route::group(['middleware' => ['user']], function () {
+    Route::group(['middleware' => ['user','tenant']], function () {
         Route::controller(AccountController::class)->group(function () {
             Route::get('', 'index')->name('admin.google.index');
 
