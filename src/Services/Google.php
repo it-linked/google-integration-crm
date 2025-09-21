@@ -44,8 +44,6 @@ class Google
         $client->setClientSecret($this->googleApp->client_secret);
         $client->setRedirectUri($this->googleApp->redirect_uri);
         $client->setScopes($this->googleApp->scopes ?: []);
-
-        // Optional defaults
         $client->setAccessType(config('services.google.access_type', 'offline'));
         $client->setApprovalPrompt(config('services.google.approval_prompt', 'force'));
         $client->setIncludeGrantedScopes(config('services.google.include_granted_scopes', true));
@@ -72,7 +70,7 @@ class Google
     public function service(string $service): mixed
     {
         $this->initClient();
-
+        $this->refreshIfExpired();
         $className = "Google_Service_{$service}";
 
         return new $className($this->client);
@@ -84,7 +82,6 @@ class Google
     public function authenticate(string $code): array
     {
         $this->initClient();
-
         $token = $this->client->fetchAccessTokenWithAuthCode($code);
 
         if (isset($token['error'])) {
@@ -92,34 +89,48 @@ class Google
         }
 
         $this->client->setAccessToken($token);
-
         return $token;
     }
 
-    public function connectUsing(string|array $token): self
+    public function connectUsing(array $token): self
     {
         $this->initClient();
         $this->client->setAccessToken($token);
-
         return $this;
     }
 
-    public function revokeToken(string|array|null $token = null): bool
+    public function revokeToken(array|string|null $token = null): bool
     {
         $this->initClient();
         $token = $token ?? $this->client->getAccessToken();
-
         return $this->client->revokeToken($token);
+    }
+
+    /**
+     * Refresh the access token if expired.
+     */
+    public function refreshIfExpired(): void
+    {
+        if (! $this->client) return;
+
+        if ($this->client->isAccessTokenExpired()) {
+            $refreshToken = $this->client->getRefreshToken();
+            if ($refreshToken) {
+                $newToken = $this->client->fetchAccessTokenWithRefreshToken($refreshToken);
+                $this->client->setAccessToken(array_merge($this->client->getAccessToken(), $newToken));
+            } else {
+                throw new RuntimeException('Access token expired and no refresh token available.');
+            }
+        }
     }
 
     public function connectWithSynchronizable(mixed $synchronizable): self
     {
         $token = $this->getTokenFromSynchronizable($synchronizable);
-
         return $this->connectUsing($token);
     }
 
-    protected function getTokenFromSynchronizable(mixed $synchronizable): mixed
+    protected function getTokenFromSynchronizable(mixed $synchronizable): array
     {
         return match (true) {
             $synchronizable instanceof Account  => $synchronizable->token,
@@ -131,6 +142,7 @@ class Google
     public function client(): Google_Client
     {
         $this->initClient();
+        $this->refreshIfExpired();
         return $this->client;
     }
 

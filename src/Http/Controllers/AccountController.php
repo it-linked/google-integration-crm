@@ -25,7 +25,6 @@ class AccountController extends Controller
         }
 
         $account = $this->accountRepository->findOneByField('user_id', auth()->user()->id);
-
         return view('google::'.request('route').'.index', compact('account'));
     }
 
@@ -60,7 +59,7 @@ class AccountController extends Controller
                 [ 'google_id' => $userInfo->id ],
                 [
                     'name'   => $userInfo->email,
-                    'token'  => $token,                 // store full token array
+                    'token'  => $token, // store full token
                     'scopes' => [session()->get('route', 'calendar')],
                 ]
             );
@@ -89,7 +88,6 @@ class AccountController extends Controller
         }
 
         session()->flash('success', trans('google::app.account-deleted'));
-
         return redirect()->back();
     }
 }
