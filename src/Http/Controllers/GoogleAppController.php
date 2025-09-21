@@ -2,86 +2,79 @@
 
 namespace Webkul\Google\Http\Controllers;
 
+use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 use Webkul\Google\Repositories\GoogleAppRepository;
-use Webkul\Google\Services\Google;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 
 class GoogleAppController extends Controller
 {
+    /**
+     * Create a new controller instance.
+     */
     public function __construct(
-        protected GoogleAppRepository $googleAppRepository,
-        protected Google $googleService
+        protected GoogleAppRepository $googleAppRepository
     ) {}
 
     /**
-     * Display the configuration page.
+     * Show the Google App configuration page.
      */
     public function index(): View
     {
-        $googleApp = $this->googleAppRepository->findByUserId(Auth::id());
+        // Assuming one record per tenant (or globally)
+        $googleApp = $this->googleAppRepository->first();
 
-        return view('google::google.app.index', compact('googleApp'));
+        return view('google::app.index', compact('googleApp'));
     }
 
     /**
-     * Store or update the Google App configuration.
+     * Create or update the Google App record.
      */
-    public function store(): RedirectResponse
+    public function store(Request $request): RedirectResponse
     {
-        $data = request()->validate([
+        $validated = $request->validate([
             'client_id'     => 'required|string',
             'client_secret' => 'required|string',
             'redirect_uri'  => 'nullable|url',
             'webhook_uri'   => 'nullable|url',
-            'scopes'        => 'nullable|string',
+            'scopes'        => 'nullable|string', // comma-separated in form
         ]);
 
-        // Convert comma-separated string to array and trim
-        $data['scopes'] = !empty($data['scopes'])
-            ? array_map('trim', explode(',', $data['scopes']))
+        // Convert comma separated scopes to array
+        $validated['scopes'] = ! empty($validated['scopes'])
+            ? array_map('trim', explode(',', $validated['scopes']))
             : [];
 
-        Log::info('Saving Google App', ['data' => $data, 'user_id' => Auth::id()]);
+        $existing = $this->googleAppRepository->first();
 
-        try {
-            $googleApp = $this->googleAppRepository->upsertForUser(Auth::id(), $data);
-
-            Log::info('Google App saved', ['google_app_id' => $googleApp->id, 'user_id' => Auth::id()]);
-
-            return redirect()
-                ->route('admin.google.app.index')
-                ->with('success', trans('google::app.index.configuration-saved'));
-        } catch (\Throwable $e) {
-            Log::error('Failed to save Google App', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-
-            return back()->withErrors([
-                'error' => 'Failed to save Google App configuration: ' . $e->getMessage()
-            ])->withInput();
+        if ($existing) {
+            $this->googleAppRepository->update($validated, $existing->id);
+            session()->flash('success', trans('google::app.app.index.updated'));
+        } else {
+            $this->googleAppRepository->create($validated);
+            session()->flash('success', trans('google::app.app.index.created'));
         }
+
+        return redirect()->route('admin.google.app.index');
     }
 
     /**
-     * Remove the Google App configuration for the current user.
+     * Remove the Google App configuration.
      */
-    public function destroy(): RedirectResponse
+    public function destroy(Request $request): RedirectResponse
     {
-        $googleApp = $this->googleAppRepository->findByUserId(Auth::id());
+        // id is passed via route or form
+        $id = $request->route('id') ?? $request->input('id');
+
+        $googleApp = $this->googleAppRepository->find($id);
 
         if ($googleApp) {
-            try {
-                $this->googleService->forCurrentUser()->revokeToken();
-            } catch (\Throwable $e) {
-                // ignore revoke failures
-            }
-
-            $googleApp->delete();
+            $this->googleAppRepository->delete($googleApp->id);
+            session()->flash('success', trans('google::app.app.index.deleted'));
+        } else {
+            session()->flash('error', trans('google::app.app.index.not_found'));
         }
 
-        return redirect()
-            ->back()
-            ->with('success', trans('google::app.index.configuration-deleted'));
+        return redirect()->route('admin.google.app.index');
     }
 }
