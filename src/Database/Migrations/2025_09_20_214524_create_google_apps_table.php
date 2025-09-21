@@ -20,14 +20,6 @@ return new class extends Migration
             $table->string('redirect_uri');
             $table->string('webhook_uri')->nullable();
             $table->json('scopes')->nullable();
-            // 🔑 Link to the user who owns these credentials
-            // Match users.id type exactly
-            $table->unsignedInteger('user_id');
-
-            $table->foreign('user_id')
-                ->references('id')
-                ->on('users')
-                ->onDelete('cascade');
             $table->timestamps();
         });
     }
@@ -39,6 +31,6 @@ return new class extends Migration
      */
     public function down()
     {
-        Schema::dropIfExists('google_accounts');
+        Schema::dropIfExists('google_apps');
     }
 };

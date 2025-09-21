@@ -15,8 +15,7 @@ class GoogleApp extends Model implements App
         'client_secret',
         'redirect_uri',
         'webhook_uri',
-        'scopes',
-        'user_id'
+        'scopes'
     ];
 
     protected $casts = [
@@ -32,10 +31,5 @@ class GoogleApp extends Model implements App
     public function getClientSecretAttribute($value)
     {
         return decrypt($value);
-    }
-
-    public function user()
-    {
-        return $this->belongsTo(\Webkul\User\Models\User::class);
     }
 }
