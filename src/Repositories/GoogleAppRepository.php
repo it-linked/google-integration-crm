@@ -12,6 +12,6 @@ class GoogleAppRepository extends Repository
      */
     public function model()
     {
-        return 'Webkul\Google\Contracts\GoogleApp';
+        return \Webkul\Google\Models\GoogleApp::class;
     }
 }
