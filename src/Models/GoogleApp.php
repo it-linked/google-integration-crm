@@ -3,12 +3,11 @@
 namespace Webkul\Google\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Webkul\Google\Contracts\GoogleApp as App;
 use Illuminate\Support\Facades\Crypt;
-use Webkul\Google\Contracts\GoogleApp as GoogleAppContract;
 
-class GoogleApp extends Model implements GoogleAppContract
+class GoogleApp extends Model implements App
 {
-    protected $connection = 'tenant';
     protected $table = 'google_apps';
 
     protected $fillable = [
@@ -17,25 +16,26 @@ class GoogleApp extends Model implements GoogleAppContract
         'redirect_uri',
         'webhook_uri',
         'scopes',
+        'user_id'
     ];
 
     protected $casts = [
         'scopes' => 'array',
     ];
 
-    /**
-     * Encrypt before saving.
-     */
-    public function setClientSecretAttribute(string $value): void
+    // Encrypt/decrypt client_secret automatically if desired
+    public function setClientSecretAttribute($value)
     {
-        $this->attributes['client_secret'] = Crypt::encryptString($value);
+        $this->attributes['client_secret'] = encrypt($value);
     }
 
-    /**
-     * Decrypt when retrieving.
-     */
-    public function getClientSecretAttribute($value): string
+    public function getClientSecretAttribute($value)
     {
-        return Crypt::decryptString($value);
+        return decrypt($value);
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(\Webkul\User\Models\User::class);
     }
 }
