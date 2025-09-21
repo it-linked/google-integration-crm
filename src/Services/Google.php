@@ -11,47 +11,31 @@ use BadMethodCallException;
 
 class Google
 {
-    /**
-     * Tenant Google App configuration (lazy-loaded).
-     */
     protected ?\Webkul\Google\Contracts\GoogleApp $googleApp = null;
-
-    /**
-     * Google Client instance (lazy-loaded).
-     */
     protected ?Google_Client $client = null;
 
     public function __construct(
         protected GoogleAppRepository $googleAppRepository
-    ) {
-        // nothing here triggers a DB query
-    }
+    ) {}
 
     /* -----------------------------------------------------------------
      |  Lazy initializers
      | -----------------------------------------------------------------
      */
-
     protected function initGoogleApp(): void
     {
-        if ($this->googleApp) {
-            return;
-        }
+        if ($this->googleApp) return;
 
         $this->googleApp = $this->googleAppRepository->first();
 
         if (! $this->googleApp) {
-            throw new RuntimeException(
-                'Google App configuration not found. Please set it up first.'
-            );
+            throw new RuntimeException('Google App configuration not found. Please set it up first.');
         }
     }
 
     protected function initClient(): void
     {
-        if ($this->client) {
-            return;
-        }
+        if ($this->client) return;
 
         $this->initGoogleApp();
 
@@ -62,11 +46,9 @@ class Google
         $client->setScopes($this->googleApp->scopes ?: []);
 
         // Optional defaults
-        $client->setApprovalPrompt(config('services.google.approval_prompt', 'force'));
         $client->setAccessType(config('services.google.access_type', 'offline'));
-        $client->setIncludeGrantedScopes(
-            config('services.google.include_granted_scopes', true)
-        );
+        $client->setApprovalPrompt(config('services.google.approval_prompt', 'force'));
+        $client->setIncludeGrantedScopes(config('services.google.include_granted_scopes', true));
 
         $this->client = $client;
     }
@@ -76,9 +58,6 @@ class Google
      | -----------------------------------------------------------------
      */
 
-    /**
-     * Dynamically call methods on the Google client.
-     */
     public function __call($method, $args): mixed
     {
         $this->initClient();
@@ -90,9 +69,6 @@ class Google
         return $this->client->{$method}(...$args);
     }
 
-    /**
-     * Create a new Google service instance (e.g., Calendar, Oauth2).
-     */
     public function service(string $service): mixed
     {
         $this->initClient();
@@ -103,8 +79,23 @@ class Google
     }
 
     /**
-     * Connect to Google using the given token.
+     * Exchange authorization code for access token and set it.
      */
+    public function authenticate(string $code): array
+    {
+        $this->initClient();
+
+        $token = $this->client->fetchAccessTokenWithAuthCode($code);
+
+        if (isset($token['error'])) {
+            throw new RuntimeException('Google token exchange failed: ' . $token['error']);
+        }
+
+        $this->client->setAccessToken($token);
+
+        return $token;
+    }
+
     public function connectUsing(string|array $token): self
     {
         $this->initClient();
@@ -113,9 +104,6 @@ class Google
         return $this;
     }
 
-    /**
-     * Revoke a token.
-     */
     public function revokeToken(string|array|null $token = null): bool
     {
         $this->initClient();
@@ -124,9 +112,6 @@ class Google
         return $this->client->revokeToken($token);
     }
 
-    /**
-     * Connect using a synchronizable (Account or Calendar).
-     */
     public function connectWithSynchronizable(mixed $synchronizable): self
     {
         $token = $this->getTokenFromSynchronizable($synchronizable);
@@ -143,23 +128,15 @@ class Google
         };
     }
 
-    /**
-     * Access the underlying Google Client.
-     */
     public function client(): Google_Client
     {
         $this->initClient();
-
         return $this->client;
     }
 
-    /**
-     * Return the active GoogleApp record.
-     */
     public function googleApp(): \Webkul\Google\Contracts\GoogleApp
     {
         $this->initGoogleApp();
-
         return $this->googleApp;
     }
 }
