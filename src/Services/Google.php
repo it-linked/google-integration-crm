@@ -7,6 +7,8 @@ use Webkul\Google\Models\Account;
 use Webkul\Google\Models\Calendar;
 use Webkul\Google\Repositories\GoogleAppRepository;
 use RuntimeException;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class Google
 {
@@ -26,15 +28,26 @@ class Google
     public function __construct(
         protected GoogleAppRepository $googleAppRepository
     ) {
-        // Fetch the tenant's Google App record
-        $this->googleApp = $this->googleAppRepository
-            ->on('tenant')   // or ->connection('tenant')
-            ->first();
+        // Get the logged-in master admin
+        $admin = Auth::guard('user')->user(); // adjust guard if different
+
+        if ($admin) {
+            // Assuming the first tenant is the active one
+            $tenant = $admin->tenants()->first();
+
+            if ($tenant && $tenant->tenant_db) {
+                config(['database.connections.tenant.database' => $tenant->tenant_db]);
+
+                DB::purge('tenant');
+                DB::reconnect('tenant');
+            }
+        }
+
+        // Now the repository will query the tenant DB
+        $this->googleApp = $googleAppRepository->first();
 
         if (! $this->googleApp) {
-            throw new RuntimeException(
-                'Google App configuration not found. Please set it up first.'
-            );
+            throw new \RuntimeException('Google App configuration not found.');
         }
 
         $client = new Google_Client;
