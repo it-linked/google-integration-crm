@@ -24,7 +24,7 @@ class GoogleAppController extends Controller
         // Assuming one record per tenant (or globally)
         $googleApp = $this->googleAppRepository->first();
 
-        return view('google::app.index', compact('googleApp'));
+        return view('google::google.app.index', compact('googleApp'));
     }
 
     /**
@@ -49,10 +49,10 @@ class GoogleAppController extends Controller
 
         if ($existing) {
             $this->googleAppRepository->update($validated, $existing->id);
-            session()->flash('success', trans('google::app.app.index.updated'));
+            session()->flash('success', trans('google::app.index.configuration-saved'));
         } else {
             $this->googleAppRepository->create($validated);
-            session()->flash('success', trans('google::app.app.index.created'));
+            session()->flash('success', trans('google::app.index.configuration-saved'));
         }
 
         return redirect()->route('admin.google.app.index');
@@ -70,9 +70,9 @@ class GoogleAppController extends Controller
 
         if ($googleApp) {
             $this->googleAppRepository->delete($googleApp->id);
-            session()->flash('success', trans('google::app.app.index.deleted'));
+            session()->flash('success', trans('google::app.index.configuration-deleted'));
         } else {
-            session()->flash('error', trans('google::app.app.index.not_found'));
+            session()->flash('error', trans('google::app.index.configuration-deleted'));
         }
 
         return redirect()->route('admin.google.app.index');
