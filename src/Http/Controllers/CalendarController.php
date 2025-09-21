@@ -27,14 +27,20 @@ class CalendarController extends Controller
         foreach ($account->calendars as $calendar) {
             if ($calendar->id == request('calendar_id')) {
                 $calendar->update(['is_primary' => 1]);
-
                 $primaryCalendar = $calendar;
             } else {
                 $calendar->update(['is_primary' => 0]);
             }
         }
 
-        $primaryCalendar?->synchronization->ping();
+        if ($primaryCalendar) {
+            // ✅ Connect the Google client using the account
+            $this->accountRepository->google()->connectWithSynchronizable($account);
+
+            // Now ping will work
+            $primaryCalendar->synchronization->ping();
+            $primaryCalendar->synchronization->startListeningForChanges();
+        }
 
         session()->flash('success', trans('google::app.account-synced'));
 
