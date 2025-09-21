@@ -2,52 +2,34 @@
 
 namespace Webkul\Google\Services;
 
-use Google_Client;
 use Webkul\Google\Models\Account;
 use Webkul\Google\Models\Calendar;
-use Webkul\Google\Repositories\GoogleAppRepository;
-use RuntimeException;
 
 class Google
 {
     /**
-     * Google Client instance.
+     * Google Client object
+     *
+     * @var \Google_Client
      */
-    protected Google_Client $client;
+    protected $client;
 
     /**
-     * Current GoogleApp configuration.
+     * Google service constructor.
+     *
+     * @return void
      */
-    protected ?\Webkul\Google\Contracts\GoogleApp $googleApp = null;
+    public function __construct()
+    {
+        $client = new \Google_Client;
 
-    /**
-     * Create a new service instance.
-     */
-    public function __construct(
-        protected GoogleAppRepository $googleAppRepository
-    ) {
-        // Fetch the tenant's Google App record
-        $this->googleApp = $this->googleAppRepository->first();
-
-        if (! $this->googleApp) {
-            throw new RuntimeException(
-                'Google App configuration not found. Please set it up first.'
-            );
-        }
-
-        $client = new Google_Client;
-
-        $client->setClientId($this->googleApp->client_id);
-        $client->setClientSecret($this->googleApp->client_secret);
-        $client->setRedirectUri($this->googleApp->redirect_uri);
-        $client->setScopes($this->googleApp->scopes ?: []);
-
-        // Optional defaults (you can also add columns in DB if needed)
-        $client->setApprovalPrompt(config('services.google.approval_prompt', 'force'));
-        $client->setAccessType(config('services.google.access_type', 'offline'));
-        $client->setIncludeGrantedScopes(
-            config('services.google.include_granted_scopes', true)
-        );
+        $client->setClientId(config('services.google.client_id'));
+        $client->setClientSecret(config('services.google.client_secret'));
+        $client->setRedirectUri(config('services.google.redirect_uri'));
+        $client->setScopes(config('services.google.scopes'));
+        $client->setApprovalPrompt(config('services.google.approval_prompt'));
+        $client->setAccessType(config('services.google.access_type'));
+        $client->setIncludeGrantedScopes(config('services.google.include_granted_scopes'));
 
         $this->client = $client;
     }
@@ -58,18 +40,18 @@ class Google
     public function __call($method, $args): mixed
     {
         if (! method_exists($this->client, $method)) {
-            throw new \BadMethodCallException("Call to undefined method '{$method}'");
+            throw new \Exception("Call to undefined method '{$method}'");
         }
 
-        return $this->client->{$method}(...$args);
+        return call_user_func_array([$this->client, $method], $args);
     }
 
     /**
-     * Create a new Google service instance (e.g., Calendar, Oauth2).
+     * Create a new Google service instance.
      */
-    public function service(string $service): mixed
+    public function service($service): mixed
     {
-        $className = "Google_Service_{$service}";
+        $className = "Google_Service_$service";
 
         return new $className($this->client);
     }
@@ -85,7 +67,7 @@ class Google
     }
 
     /**
-     * Revoke a token.
+     * Create a new Google service instance.
      */
     public function revokeToken(string|array|null $token = null): bool
     {
@@ -95,7 +77,7 @@ class Google
     }
 
     /**
-     * Connect using a synchronizable (Account or Calendar).
+     * Connect to Google using the given synchronizable.
      */
     public function connectWithSynchronizable(mixed $synchronizable): self
     {
@@ -105,30 +87,19 @@ class Google
     }
 
     /**
-     * Extract the token from the synchronizable model.
+     * Get the token from the given synchronizable.
      */
     protected function getTokenFromSynchronizable(mixed $synchronizable): mixed
     {
-        return match (true) {
-            $synchronizable instanceof Account  => $synchronizable->token,
-            $synchronizable instanceof Calendar => $synchronizable->account->token,
-            default => throw new RuntimeException('Invalid synchronizable type.'),
-        };
-    }
+        switch (true) {
+            case $synchronizable instanceof Account:
+                return $synchronizable->token;
 
-    /**
-     * Access the underlying Google Client.
-     */
-    public function client(): Google_Client
-    {
-        return $this->client;
-    }
+            case $synchronizable instanceof Calendar:
+                return $synchronizable->account->token;
 
-    /**
-     * Return the active GoogleApp record.
-     */
-    public function googleApp(): \Webkul\Google\Contracts\GoogleApp
-    {
-        return $this->googleApp;
+            default:
+                throw new \Exception('Invalid Synchronizable');
+        }
     }
 }
