@@ -15,10 +15,19 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
-     * Get the Google request (all events from the calendar).
+     * Get all events from Google Calendar.
      */
     public function getGoogleRequest(mixed $service, mixed $options): mixed
     {
+        // Expand recurring events into individual occurrences
+        $options['singleEvents'] = true;
+        $options['orderBy'] = 'startTime';
+
+        Log::info('SynchronizeEvents: starting request', [
+            'account_id' => $this->synchronizable->id ?? null,
+            'options'    => $options
+        ]);
+
         return $service->events->listEvents(
             $this->synchronizable->google_id,
             $options
@@ -30,12 +39,15 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
      */
     public function syncItem($googleEvent)
     {
+        $startDatetime = $this->parseDatetime($googleEvent->start);
+        $endDatetime   = $this->parseDatetime($googleEvent->end);
+
         Log::info('SynchronizeEvents: processing item', [
             'google_id' => $googleEvent->id,
-            'status' => $googleEvent->status,
-            'summary' => $googleEvent->summary,
-            'start' => $googleEvent->start,
-            'end' => $googleEvent->end,
+            'status'    => $googleEvent->status,
+            'summary'   => $googleEvent->summary,
+            'start'     => $startDatetime->toDateTimeString(),
+            'end'       => $endDatetime->toDateTimeString(),
         ]);
 
         // Delete cancelled events
@@ -50,8 +62,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
             return;
         }
 
-        // Handle recurring events by skipping past occurrences
-        $startDatetime = $this->parseDatetime($googleEvent->start);
+        // Skip past events
         if ($startDatetime->isPast()) {
             Log::info('SynchronizeEvents: skipped (past event)', [
                 'google_id' => $googleEvent->id
@@ -69,12 +80,12 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
         $activity = $event->activity()->updateOrCreate(
             ['id' => $event->activity_id],
             [
-                'title' => $googleEvent->summary,
-                'comment' => $googleEvent->description ?? '',
+                'title'         => $googleEvent->summary,
+                'comment'       => $googleEvent->description ?? '',
                 'schedule_from' => $startDatetime,
-                'schedule_to' => $this->parseDatetime($googleEvent->end),
-                'user_id' => $this->synchronizable->account->user_id,
-                'type' => 'meeting',
+                'schedule_to'   => $endDatetime,
+                'user_id'       => $this->synchronizable->account->user_id,
+                'type'          => 'meeting',
             ]
         );
 
@@ -82,20 +93,24 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
 
         Log::info('SynchronizeEvents: event record stored/updated', [
             'db_event_id' => $event->id,
-            'google_id' => $googleEvent->id
+            'google_id'   => $googleEvent->id
         ]);
 
         Log::info('SynchronizeEvents: activity stored/updated', [
-            'activity_id' => $activity->id,
+            'activity_id'     => $activity->id,
             'google_event_id' => $googleEvent->id
         ]);
     }
 
     /**
-     * Drop all synced items.
+     * Drop all synced events.
      */
     public function dropAllSyncedItems()
     {
+        Log::warning('SynchronizeEvents: dropping all events', [
+            'account_id' => $this->synchronizable->id ?? null,
+        ]);
+
         $this->synchronizable->events()->delete();
     }
 
