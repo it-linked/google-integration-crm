@@ -43,7 +43,10 @@ class Activity
         if (! $calendar) return;
 
         try {
-            $service = $calendar->getGoogleService('Calendar');
+            $google = app(\Webkul\Google\Services\Google::class);
+            $google->connectWithSynchronizable($calendar->account);  // ✅ pass the Account
+            $service = $google->service('Calendar');
+
             $eventData = $this->prepareEventData($activity);
 
             Log::info('Google Sync: Creating Google event', ['data' => $eventData]);
@@ -94,7 +97,10 @@ class Activity
         if (! $calendar) return;
 
         try {
-            $service = $calendar->getGoogleService('Calendar');
+            $google = app(\Webkul\Google\Services\Google::class);
+            $google->connectWithSynchronizable($calendar->account);  // ✅ pass the Account
+            $service = $google->service('Calendar');
+
             $eventData = $this->prepareEventData($activity);
 
             if ($event?->google_id) {
@@ -139,7 +145,10 @@ class Activity
         if (! $event) return;
 
         try {
-            $service = $event->calendar->getGoogleService('Calendar');
+            $google = app(\Webkul\Google\Services\Google::class);
+            $google->connectWithSynchronizable($calendar->account);  // ✅ pass the Account
+            $service = $google->service('Calendar');
+
             $service->events->delete($event->calendar->google_id, $event->google_id);
             Log::info('Google Sync: Event deleted successfully', ['google_event_id' => $event->google_id]);
         } catch (\Throwable $e) {
