@@ -18,7 +18,11 @@
     @lang('google::app.tabs.meet')
 </a>
 
-<!-- Add Configuration Button -->
-<a href="{{ route('admin.google.app.index') }}" class="inline-block cursor-pointer border-b-2 px-3 py-2.5 text-sm font-medium">
+<!-- Google App Tab -->
+<a href="{{ route('admin.google.app.index') }}"
+    class="inline-block cursor-pointer border-b-2 px-3 py-2.5 text-sm font-medium
+            {{ request()->routeIs('admin.google.app.index')
+                ? 'text-brandColor border-brandColor dark:text-brandColor dark:border-brandColor'
+                : 'text-gray-600 dark:text-gray-300 border-transparent hover:text-gray-800 hover:border-gray-400 dark:hover:border-gray-400 dark:hover:text-white' }}">
     @lang('google::app.calendar.index.title')
 </a>

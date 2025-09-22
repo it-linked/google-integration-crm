@@ -42,7 +42,7 @@ return [
     // ✅ New section for Google App configuration
     'app' => [
         'index' => [
-            'title'          => 'Google App Configuration',
+            'title'          => 'Configuration',
             'info'           => 'Store and manage your Google App credentials to enable API integrations.',
             'add'            => 'Add Configuration',
             'edit'           => 'Update Configuration',
