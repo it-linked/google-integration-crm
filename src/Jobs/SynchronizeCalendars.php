@@ -7,6 +7,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+    use Illuminate\Support\Facades\Log;
 
 class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
 {
@@ -31,14 +32,28 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
                 ->get()->each->delete();
         }
 
+        // ✅ Log every calendar and its accessRole
+        Log::info('SynchronizeCalendars: checking calendar', [
+            'id'         => $googleCalendar->id,
+            'summary'    => $googleCalendar->summary,
+            'accessRole' => $googleCalendar->accessRole,
+            'primary'    => property_exists($googleCalendar, 'primary') ? $googleCalendar->primary : false,
+        ]);
+
         if ($googleCalendar->accessRole != 'owner') {
+            Log::warning('SynchronizeCalendars: skipped calendar (not owner)', [
+                'id'         => $googleCalendar->id,
+                'summary'    => $googleCalendar->summary,
+                'accessRole' => $googleCalendar->accessRole,
+            ]);
             return;
         }
 
         $this->synchronizable->calendars()->updateOrCreate(
             [
                 'google_id' => $googleCalendar->id,
-            ], [
+            ],
+            [
                 'name'     => $googleCalendar->summary,
                 'color'    => $googleCalendar->backgroundColor,
                 'timezone' => $googleCalendar->timeZone,
