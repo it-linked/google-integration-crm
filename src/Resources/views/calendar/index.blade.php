@@ -25,11 +25,6 @@
             <div class="flex gap-2 border-b border-gray-200 dark:border-gray-800">
                 <!-- Tabs -->
                 <x-google::tabs />
-
-                <!-- Add Configuration Button -->
-                <a href="{{ route('admin.google.app.index') }}" class="primary-button">
-                    @lang('google::app.calendar.index.title')
-                </a>
             </div>
 
             <div class="flex flex-col gap-4 px-4 py-2">
