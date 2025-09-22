@@ -17,7 +17,6 @@ class Calendar extends Model implements CalendarContract
      *
      * @var string
      */
-    protected $connection = 'tenant';
     protected $table = 'google_calendars';
 
     /**

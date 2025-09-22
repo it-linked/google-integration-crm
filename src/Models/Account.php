@@ -11,7 +11,7 @@ use Webkul\Google\Jobs\WatchCalendars;
 class Account extends Model implements AccountContract
 {
     use Synchronizable;
-    protected $connection = 'tenant';
+
     protected $table = 'google_accounts';
 
     protected $fillable = [

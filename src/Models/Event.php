@@ -20,7 +20,6 @@ class Event extends Model implements EventContract
      *
      * @var string
      */
-    protected $connection = 'tenant';
     protected $table = 'google_events';
 
     /**
