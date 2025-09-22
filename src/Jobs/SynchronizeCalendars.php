@@ -7,7 +7,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-    use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Log;
 
 class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
 {
@@ -18,47 +18,57 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
      */
     public function getGoogleRequest(mixed $service, mixed $options): mixed
     {
+        Log::info('SynchronizeCalendars: starting request', [
+            'account_id' => $this->synchronizable->id ?? null,
+            'options'    => $options,
+        ]);
+
         return $service->calendarList->listCalendarList($options);
     }
 
     /**
-     * Get the google request options.
+     * Sync a single Google calendar item.
      */
     public function syncItem($googleCalendar)
     {
-        if ($googleCalendar->deleted) {
-            return $this->synchronizable->calendars()
-                ->where('google_id', $googleCalendar->id)
-                ->get()->each->delete();
-        }
-
-        // ✅ Log every calendar and its accessRole
-        Log::info('SynchronizeCalendars: checking calendar', [
+        Log::info('SynchronizeCalendars: processing item', [
             'id'         => $googleCalendar->id,
             'summary'    => $googleCalendar->summary,
             'accessRole' => $googleCalendar->accessRole,
             'primary'    => property_exists($googleCalendar, 'primary') ? $googleCalendar->primary : false,
         ]);
 
-        if ($googleCalendar->accessRole != 'owner') {
-            Log::warning('SynchronizeCalendars: skipped calendar (not owner)', [
+        if ($googleCalendar->deleted) {
+            Log::warning('SynchronizeCalendars: calendar marked deleted', [
+                'id' => $googleCalendar->id,
+            ]);
+
+            return $this->synchronizable->calendars()
+                ->where('google_id', $googleCalendar->id)
+                ->get()->each->delete();
+        }
+
+        if ($googleCalendar->accessRole !== 'owner') {
+            Log::warning('SynchronizeCalendars: skipped (not owner)', [
                 'id'         => $googleCalendar->id,
-                'summary'    => $googleCalendar->summary,
                 'accessRole' => $googleCalendar->accessRole,
             ]);
             return;
         }
 
-        $this->synchronizable->calendars()->updateOrCreate(
-            [
-                'google_id' => $googleCalendar->id,
-            ],
+        $calendar = $this->synchronizable->calendars()->updateOrCreate(
+            ['google_id' => $googleCalendar->id],
             [
                 'name'     => $googleCalendar->summary,
                 'color'    => $googleCalendar->backgroundColor,
                 'timezone' => $googleCalendar->timeZone,
             ]
         );
+
+        Log::info('SynchronizeCalendars: calendar stored/updated', [
+            'db_id' => $calendar->id,
+            'google_id' => $googleCalendar->id,
+        ]);
     }
 
     /**
@@ -66,6 +76,10 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
      */
     public function dropAllSyncedItems()
     {
+        Log::warning('SynchronizeCalendars: dropping all calendars', [
+            'account_id' => $this->synchronizable->id ?? null,
+        ]);
+
         $this->synchronizable->calendars->each->delete();
     }
 }
