@@ -155,10 +155,19 @@ class Google
     protected function getTokenFromSynchronizable(mixed $synchronizable): array
     {
         return match (true) {
-            $synchronizable instanceof Account  => $synchronizable->token,
-            default => throw new RuntimeException('Invalid synchronizable type.'),
+            // Existing support for Account
+            $synchronizable instanceof \Webkul\Google\Models\Account =>
+            $synchronizable->token,
+
+            // ✅ New support for Calendar
+            $synchronizable instanceof \Webkul\Google\Models\Calendar =>
+            $synchronizable->account->token,
+
+            default =>
+            throw new \RuntimeException('Invalid synchronizable type.'),
         };
     }
+
 
     public function client(): Google_Client
     {
