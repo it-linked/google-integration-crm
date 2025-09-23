@@ -4,6 +4,7 @@ namespace Webkul\Google\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Webkul\Google\Models\Synchronization;
+use Illuminate\Support\Facades\Log;
 
 class WebhookController extends Controller
 {
@@ -12,6 +13,7 @@ class WebhookController extends Controller
      */
     public function __invoke(Request $request): void
     {
+        Log::info('Webhook calling test');
         if ($request->header('x-goog-resource-state') !== 'exists') {
             return;
         }
