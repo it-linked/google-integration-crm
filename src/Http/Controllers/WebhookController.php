@@ -13,7 +13,10 @@ class WebhookController extends Controller
      */
     public function __invoke(Request $request): void
     {
-        Log::info('Webhook calling test');
+        Log::info('Webhook hit', [
+            'headers' => $request->headers->all(),
+            'body'    => $request->all()
+        ]);
         if ($request->header('x-goog-resource-state') !== 'exists') {
             return;
         }
