@@ -21,6 +21,10 @@ class WatchEvents extends WatchResource implements ShouldQueue
      */
     public function getGoogleRequest($service, $channel)
     {
+        Log::info('Webhook hit', [
+            'headers' => $request->headers->all(),
+            'body'    => $request->all()
+        ]);
         return $service->events->watch(
             $this->synchronizable->google_id, $channel
         );
