@@ -3,28 +3,88 @@
 namespace Webkul\Google\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Webkul\Google\Models\Synchronization;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Webkul\Google\Models\Synchronization;
+use Webkul\Google\Jobs\SynchronizeEvents;
 
 class WebhookController extends Controller
 {
     /**
-     * Handle the incoming request.
+     * Handle incoming Google Calendar push notifications.
      */
     public function __invoke(Request $request): void
     {
-        Log::info('Webhook hit', [
+        Log::info('Google Calendar webhook hit', [
             'headers' => $request->headers->all(),
-            'body'    => $request->all()
+            'body'    => $request->all(),
         ]);
-        if ($request->header('x-goog-resource-state') !== 'exists') {
+
+        $state = $request->header('x-goog-resource-state');
+
+        $sync = Synchronization::query()
+            ->where('id', $request->header('x-goog-channel-id'))
+            ->where('resource_id', $request->header('x-goog-resource-id'))
+            ->first();
+
+        if (! $sync) {
+            Log::warning('Google webhook: No matching Synchronization record.', [
+                'channel_id' => $request->header('x-goog-channel-id'),
+                'resource_id'=> $request->header('x-goog-resource-id'),
+            ]);
             return;
         }
 
-        Synchronization::query()
-            ->where('id', $request->header('x-goog-channel-id'))
-            ->where('resource_id', $request->header('x-goog-resource-id'))
-            ->firstOrFail()
-            ->ping();
+        switch ($state) {
+            case 'exists':
+                /**
+                 * A new or updated event exists.
+                 * Refresh the sync token and queue a delta sync.
+                 */
+                Log::info('Google webhook: event created/updated.', [
+                    'sync_id' => $sync->id,
+                ]);
+
+                // Update last ping so periodic job knows it’s alive
+                $sync->ping();
+
+                // Dispatch incremental sync job (make sure showDeleted=true in job)
+                SynchronizeEvents::dispatch($sync->calendar);
+                break;
+
+            case 'notExists':
+                /**
+                 * A resource was deleted (calendar or event).
+                 * Remove related events in CRM DB.
+                 */
+                Log::info('Google webhook: resource deleted.', [
+                    'sync_id' => $sync->id,
+                ]);
+
+                // Example cleanup of all events for this calendar
+                DB::table('events')
+                    ->where('calendar_id', $sync->calendar_id)
+                    ->delete();
+
+                // Optionally also mark the synchronization as expired
+                $sync->update(['expired_at' => now()]);
+                break;
+
+            case 'sync':
+                /**
+                 * Initial channel sync confirmation.
+                 * Usually safe to ignore.
+                 */
+                Log::info('Google webhook: sync confirmation.', [
+                    'sync_id' => $sync->id,
+                ]);
+                break;
+
+            default:
+                Log::notice('Google webhook: unhandled resource state.', [
+                    'state' => $state,
+                    'sync_id' => $sync->id,
+                ]);
+        }
     }
 }

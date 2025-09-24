@@ -9,35 +9,59 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Google\Service\Calendar as GoogleCalendar;
+use Google\Service\Exception as GoogleException;
 
 class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
-     * Get all events from Google Calendar.
+     * Build the Google Calendar request.
+     * Ensures deleted events are also returned.
      */
     public function getGoogleRequest(mixed $service, mixed $options): mixed
     {
-        // Expand recurring events into individual occurrences
+        // Always expand recurring events into individual instances
         $options['singleEvents'] = true;
-        $options['orderBy'] = 'startTime';
+        $options['orderBy']      = 'startTime';
+
+        // ✅ Critical: include deleted/cancelled events
+        $options['showDeleted']  = true;
 
         Log::info('SynchronizeEvents: starting request', [
             'account_id' => $this->synchronizable->id ?? null,
             'options'    => $options
         ]);
 
-        return $service->events->listEvents(
-            $this->synchronizable->google_id,
-            $options
-        );
+        try {
+            return $service->events->listEvents(
+                $this->synchronizable->google_id,
+                $options
+            );
+        } catch (GoogleException $e) {
+            // Handle expired/invalid syncToken (HTTP 410)
+            if ($e->getCode() === 410) {
+                Log::warning('SynchronizeEvents: syncToken invalid, dropping all events.', [
+                    'account_id' => $this->synchronizable->id ?? null,
+                ]);
+                $this->dropAllSyncedItems();
+                // Force a full sync by removing syncToken
+                unset($options['syncToken']);
+                return $service->events->listEvents(
+                    $this->synchronizable->google_id,
+                    $options
+                );
+            }
+
+            throw $e;
+        }
     }
 
     /**
-     * Sync individual Google Event.
+     * Sync a single Google Calendar event.
      */
-    public function syncItem($googleEvent)
+    public function syncItem($googleEvent): void
     {
         $startDatetime = $this->parseDatetime($googleEvent->start);
         $endDatetime   = $this->parseDatetime($googleEvent->end);
@@ -46,41 +70,44 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
             'google_id' => $googleEvent->id,
             'status'    => $googleEvent->status,
             'summary'   => $googleEvent->summary,
-            'start'     => $startDatetime->toDateTimeString(),
-            'end'       => $endDatetime->toDateTimeString(),
+            'start'     => $startDatetime?->toDateTimeString(),
+            'end'       => $endDatetime?->toDateTimeString(),
         ]);
 
-        // Delete cancelled events
+        /**
+         * ✅ Handle cancelled/deleted events.
+         * Google marks deleted events as status=cancelled when showDeleted=true.
+         */
         if ($googleEvent->status === 'cancelled') {
             $this->synchronizable->events()
                 ->where('google_id', $googleEvent->id)
                 ->delete();
 
             Log::warning('SynchronizeEvents: deleting cancelled event', [
-                'google_id' => $googleEvent->id
+                'google_id' => $googleEvent->id,
             ]);
             return;
         }
 
-        // Skip past events
-        if ($startDatetime->isPast()) {
+        // Skip past events if you don’t need historical syncing
+        if ($startDatetime && $startDatetime->isPast()) {
             Log::info('SynchronizeEvents: skipped (past event)', [
-                'google_id' => $googleEvent->id
+                'google_id' => $googleEvent->id,
             ]);
             return;
         }
 
-        // Create or update event record
+        // ✅ Upsert the event record
         $event = $this->synchronizable->events()->updateOrCreate(
             ['google_id' => $googleEvent->id],
-            []
+            [] // Fill other event-specific columns if needed
         );
 
-        // Create or update activity linked to the event
+        // ✅ Upsert the related CRM activity
         $activity = $event->activity()->updateOrCreate(
             ['id' => $event->activity_id],
             [
-                'title'         => $googleEvent->summary,
+                'title'         => $googleEvent->summary ?? '(No Title)',
                 'comment'       => $googleEvent->description ?? '',
                 'schedule_from' => $startDatetime,
                 'schedule_to'   => $endDatetime,
@@ -89,23 +116,19 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
             ]
         );
 
+        // Link activity back to event
         $event->update(['activity_id' => $activity->id]);
 
-        Log::info('SynchronizeEvents: event record stored/updated', [
+        Log::info('SynchronizeEvents: event stored/updated', [
             'db_event_id' => $event->id,
-            'google_id'   => $googleEvent->id
-        ]);
-
-        Log::info('SynchronizeEvents: activity stored/updated', [
-            'activity_id'     => $activity->id,
-            'google_event_id' => $googleEvent->id
+            'google_id'   => $googleEvent->id,
         ]);
     }
 
     /**
-     * Drop all synced events.
+     * Drop all previously synced events (used on 410 Gone).
      */
-    public function dropAllSyncedItems()
+    public function dropAllSyncedItems(): void
     {
         Log::warning('SynchronizeEvents: dropping all events', [
             'account_id' => $this->synchronizable->id ?? null,
@@ -115,11 +138,15 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
     }
 
     /**
-     * Parse datetime from Google Event.
+     * Parse start/end datetimes safely.
      */
-    protected function parseDatetime($googleDatetime)
+    protected function parseDatetime($googleDatetime): ?Carbon
     {
-        $rawDatetime = $googleDatetime->dateTime ?? $googleDatetime->date;
-        return Carbon::parse($rawDatetime);
+        if (! $googleDatetime) {
+            return null;
+        }
+
+        $raw = $googleDatetime->dateTime ?? $googleDatetime->date ?? null;
+        return $raw ? Carbon::parse($raw) : null;
     }
 }
