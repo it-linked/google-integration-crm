@@ -30,7 +30,7 @@ class WebhookController extends Controller
         if (! $sync) {
             Log::warning('Google webhook: No matching Synchronization record.', [
                 'channel_id' => $request->header('x-goog-channel-id'),
-                'resource_id'=> $request->header('x-goog-resource-id'),
+                'resource_id' => $request->header('x-goog-resource-id'),
             ]);
             return;
         }
@@ -53,20 +53,14 @@ class WebhookController extends Controller
                 break;
 
             case 'notExists':
-                /**
-                 * A resource was deleted (calendar or event).
-                 * Remove related events in CRM DB.
-                 */
                 Log::info('Google webhook: resource deleted.', [
                     'sync_id' => $sync->id,
                 ]);
 
-                // Example cleanup of all events for this calendar
-                DB::table('events')
-                    ->where('calendar_id', $sync->calendar_id)
-                    ->delete();
+                // Delete linked google_events and activities
+                $sync->calendar->events()->delete();
 
-                // Optionally also mark the synchronization as expired
+                // Mark the synchronization as expired
                 $sync->update(['expired_at' => now()]);
                 break;
 
