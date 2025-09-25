@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Webkul\Google\Models\Synchronization;
-use App\Models\AdminUserTenant;
+use Webkul\Master\Models\AdminUserTenant;
 
 class PeriodicSynchronizations implements ShouldQueue
 {
