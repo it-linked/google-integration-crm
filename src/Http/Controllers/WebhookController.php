@@ -5,39 +5,40 @@ namespace Webkul\Google\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Config;
 use Webkul\Google\Models\Synchronization;
 use Webkul\Google\Jobs\SynchronizeEvents;
+use App\Models\AdminUserTenant; // your tenant mapping model
 
 class WebhookController extends Controller
 {
     protected bool $dbSwitched = false;
 
-    protected function ensureTenantDb(): void
+    protected function ensureTenantDb(Request $request): void
     {
         if ($this->dbSwitched) return;
 
-        // Assume the tenant DB name is passed in a header
-        $tenantDb = request()->header('x-app-tenant-db');
+        $host = $request->getHost();
+        $tenant = AdminUserTenant::where('domain', $host)->first();
 
-        if (! $tenantDb) {
-            Log::error('Tenant DB header missing for Google webhook');
+        if (! $tenant) {
+            Log::error('Tenant not found for host', ['host' => $host]);
             throw new \Exception('Tenant database not provided.');
         }
 
-        config(['database.connections.tenant.database' => $tenantDb]);
+        Config::set('database.connections.tenant.database', $tenant->tenant_db);
         DB::purge('tenant');
         DB::reconnect('tenant');
-        DB::connection('tenant')->getPdo();
-        app('config')->set('database.default', 'tenant');
+        Config::set('database.default', 'tenant');
 
-        Log::info('Tenant DB switched for Google webhook: ' . $tenantDb);
+        Log::info('Switched to tenant DB for Google webhook', ['database' => $tenant->tenant_db]);
 
         $this->dbSwitched = true;
     }
 
     public function __invoke(Request $request): void
     {
-        $this->ensureTenantDb();
+        $this->ensureTenantDb($request);
 
         Log::info('Google Calendar webhook hit', [
             'headers' => $request->headers->all(),
