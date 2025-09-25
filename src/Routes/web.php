@@ -29,5 +29,7 @@ Route::group([
         Route::delete('/app/destroy', [GoogleAppController::class, 'destroy'])->name('admin.google.app.destroy');
     });
 
-    Route::post('webhook', [WebhookController::class])->name('admin.google.webhook');
+    Route::post('webhook', WebhookController::class)
+        ->withoutMiddleware(['UseTenantDatabase'])
+        ->name('admin.google.webhook');
 });
