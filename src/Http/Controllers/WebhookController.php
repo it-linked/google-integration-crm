@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Config;
 use Webkul\Google\Models\Synchronization;
 use Webkul\Google\Jobs\SynchronizeEvents;
-use App\Models\AdminUserTenant; // your tenant mapping model
+use Webkul\Master\Models\AdminUserTenant; // your tenant mapping model
 
 class WebhookController extends Controller
 {
