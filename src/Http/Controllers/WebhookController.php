@@ -10,11 +10,35 @@ use Webkul\Google\Jobs\SynchronizeEvents;
 
 class WebhookController extends Controller
 {
-    /**
-     * Handle incoming Google Calendar push notifications.
-     */
+    protected bool $dbSwitched = false;
+
+    protected function ensureTenantDb(): void
+    {
+        if ($this->dbSwitched) return;
+
+        // Assume the tenant DB name is passed in a header
+        $tenantDb = request()->header('x-app-tenant-db');
+
+        if (! $tenantDb) {
+            Log::error('Tenant DB header missing for Google webhook');
+            throw new \Exception('Tenant database not provided.');
+        }
+
+        config(['database.connections.tenant.database' => $tenantDb]);
+        DB::purge('tenant');
+        DB::reconnect('tenant');
+        DB::connection('tenant')->getPdo();
+        app('config')->set('database.default', 'tenant');
+
+        Log::info('Tenant DB switched for Google webhook: ' . $tenantDb);
+
+        $this->dbSwitched = true;
+    }
+
     public function __invoke(Request $request): void
     {
+        $this->ensureTenantDb();
+
         Log::info('Google Calendar webhook hit', [
             'headers' => $request->headers->all(),
             'body'    => $request->all(),
@@ -29,7 +53,7 @@ class WebhookController extends Controller
 
         if (! $sync) {
             Log::warning('Google webhook: No matching Synchronization record.', [
-                'channel_id' => $request->header('x-goog-channel-id'),
+                'channel_id'  => $request->header('x-goog-channel-id'),
                 'resource_id' => $request->header('x-goog-resource-id'),
             ]);
             return;
@@ -37,41 +61,19 @@ class WebhookController extends Controller
 
         switch ($state) {
             case 'exists':
-                /**
-                 * A new or updated event exists.
-                 * Refresh the sync token and queue a delta sync.
-                 */
-                Log::info('Google webhook: event created/updated.', [
-                    'sync_id' => $sync->id,
-                ]);
-
-                // Update last ping so periodic job knows it’s alive
+                Log::info('Google webhook: event created/updated.', ['sync_id' => $sync->id]);
                 $sync->ping();
-
-                // Dispatch incremental sync job (make sure showDeleted=true in job)
                 SynchronizeEvents::dispatch($sync->calendar);
                 break;
 
             case 'notExists':
-                Log::info('Google webhook: resource deleted.', [
-                    'sync_id' => $sync->id,
-                ]);
-
-                // Delete linked google_events and activities
+                Log::info('Google webhook: resource deleted.', ['sync_id' => $sync->id]);
                 $sync->calendar->events()->delete();
-
-                // Mark the synchronization as expired
                 $sync->update(['expired_at' => now()]);
                 break;
 
             case 'sync':
-                /**
-                 * Initial channel sync confirmation.
-                 * Usually safe to ignore.
-                 */
-                Log::info('Google webhook: sync confirmation.', [
-                    'sync_id' => $sync->id,
-                ]);
+                Log::info('Google webhook: sync confirmation.', ['sync_id' => $sync->id]);
                 break;
 
             default:
