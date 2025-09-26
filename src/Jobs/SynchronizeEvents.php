@@ -17,40 +17,40 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
     public function getGoogleRequest($service, $options)
     {
         $options['singleEvents'] = true;
-        $options['orderBy'] = 'startTime';
 
-        Log::info('SynchronizeEvents: fetching events for account', [
+        if ($this->synchronization->token) {
+            // When using syncToken, cannot use orderBy or time range
+            unset($options['timeMin'], $options['timeMax'], $options['orderBy']);
+            $options['syncToken'] = $this->synchronization->token;
+        } else {
+            // Initial sync or full sync: order by startTime
+            $options['orderBy'] = 'startTime';
+            // Optionally, set timeMin/timeMax here
+            // $options['timeMin'] = Carbon::now()->subYears(2)->toRfc3339String();
+            // $options['timeMax'] = Carbon::now()->toRfc3339String();
+        }
+
+        Log::info('SynchronizeEvents: fetching events', [
             'account_id' => $this->synchronizable->id ?? null,
             'tenant_db' => $this->tenantDb,
+            'sync_token' => $this->synchronization->token ?? null,
         ]);
 
         $allEvents = [];
+        $pageToken = $options['pageToken'] ?? null;
 
-        // Loop through all calendars of this account
-        foreach ($this->synchronizable->calendars as $calendar) {
-            $calendarId = $calendar->google_calendar_id ?? 'primary';
+        do {
+            if ($pageToken) {
+                $options['pageToken'] = $pageToken;
+            } else {
+                unset($options['pageToken']);
+            }
 
-            $pageToken = null;
-            $syncToken = $this->synchronization->token;
+            $response = $service->events->listEvents($this->synchronizable->google_id, $options);
 
-            do {
-                $opts = $options;
-                if ($syncToken) {
-                    unset($opts['timeMin'], $opts['timeMax']);
-                    $opts['syncToken'] = $syncToken;
-                }
-                if ($pageToken) {
-                    $opts['pageToken'] = $pageToken;
-                }
-
-                $list = $service->events->listEvents($calendarId, $opts);
-
-                $allEvents = array_merge($allEvents, $list->getItems());
-
-                $pageToken = $list->getNextPageToken();
-                $syncToken = null; // Only use syncToken on first request
-            } while ($pageToken);
-        }
+            $allEvents = array_merge($allEvents, $response->getItems());
+            $pageToken = $response->getNextPageToken();
+        } while ($pageToken);
 
         return $allEvents;
     }
