@@ -40,7 +40,7 @@ class PeriodicSynchronizations implements ShouldQueue
 
                 // Fetch synchronizations with no resource_id
                 $synchronizations = Synchronization::on('tenant')
-                    ->whereNull('resource_id')
+                    ->whereNotNull('resource_id')
                     ->get();
 
                 Log::info("Found " . $synchronizations->count() . " synchronizations to ping", [
