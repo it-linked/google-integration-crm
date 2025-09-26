@@ -50,6 +50,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 $pageToken = $response->getNextPageToken();
             } while ($pageToken);
         } catch (Google_Service_Exception $e) {
+
             if ($e->getCode() === 404) {
                 Log::warning('Google calendar not found, disabling synchronization', [
                     'google_id' => $this->synchronizable->google_id,
@@ -69,7 +70,28 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 return [];
             }
 
-            throw $e;
+            if ($e->getCode() === 410) {
+                // Sync token invalid — full sync required
+                Log::warning('Sync token invalid, performing full sync', [
+                    'account_id' => $this->synchronizable->id,
+                    'tenant_db' => $this->tenantDb,
+                ]);
+
+                // Clear the old token
+                $this->synchronization->update(['token' => null]);
+                unset($options['syncToken']);
+
+                // Retry full sync
+                $pageToken = null;
+                do {
+                    $response = $service->events->listEvents($this->synchronizable->google_id, $options);
+
+                    $allEvents = array_merge($allEvents, $response->getItems());
+                    $pageToken = $response->getNextPageToken();
+                } while ($pageToken);
+            } else {
+                throw $e;
+            }
         }
 
         return $allEvents;

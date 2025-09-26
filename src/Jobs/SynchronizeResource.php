@@ -96,16 +96,22 @@ abstract class SynchronizeResource
                 return;
             }
 
-            // If the result is a single-level array (like events)
+            // Sync each item
             foreach ($list as $item) {
                 $this->syncItem($item);
             }
 
-            // Update synchronization token if available
+            // Save a new sync token if available
             if (method_exists($list, 'getNextSyncToken') && $list->getNextSyncToken()) {
                 $this->synchronization->update([
                     'token' => $list->getNextSyncToken(),
                     'last_synchronized_at' => now(),
+                ]);
+
+                Log::info('Next sync token updated', [
+                    'account_id' => $this->synchronizable->id ?? null,
+                    'tenant_db'  => $this->tenantDb,
+                    'next_sync_token' => $list->getNextSyncToken(),
                 ]);
             }
 
