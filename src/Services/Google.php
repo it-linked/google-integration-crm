@@ -27,11 +27,8 @@ class Google
         $this->googleApp = $this->googleAppRepository->first();
 
         if (! $this->googleApp) {
-            Log::error('Google App configuration not found.');
             throw new RuntimeException('Google App configuration not found.');
         }
-
-        Log::info('Google App initialized', ['client_id' => $this->googleApp->client_id]);
     }
 
     protected function initClient(): void
@@ -45,7 +42,6 @@ class Google
         $client->setClientSecret($this->googleApp->client_secret);
         $client->setRedirectUri($this->googleApp->redirect_uri);
 
-        // ✅ Scopes include both calendar + userinfo
         $client->setScopes([
             'https://www.googleapis.com/auth/calendar',
             'https://www.googleapis.com/auth/calendar.events',
@@ -53,12 +49,11 @@ class Google
             'https://www.googleapis.com/auth/userinfo.profile',
         ]);
 
-        $client->setAccessType('offline');   // ensures refresh token
-        $client->setPrompt('consent');       // forces consent
+        $client->setAccessType('offline');
+        $client->setPrompt('consent');
         $client->setIncludeGrantedScopes(true);
 
         $this->client = $client;
-        Log::info('Google Client initialized');
     }
 
     public function __call($method, $args): mixed
@@ -66,11 +61,9 @@ class Google
         $this->initClient();
 
         if (! method_exists($this->client, $method)) {
-            Log::error("Attempted to call undefined method {$method}");
             throw new BadMethodCallException("Call to undefined method '{$method}'");
         }
 
-        Log::info("Calling Google_Client method: {$method}");
         return $this->client->{$method}(...$args);
     }
 
@@ -79,7 +72,6 @@ class Google
         $this->initClient();
         $this->refreshIfExpired();
         $className = "Google_Service_{$service}";
-        Log::info("Creating Google service instance: {$className}");
         return new $className($this->client);
     }
 
@@ -89,12 +81,9 @@ class Google
         $token = $this->client->fetchAccessTokenWithAuthCode($code);
 
         if (isset($token['error'])) {
-            Log::error('Google token exchange failed', ['error' => $token['error']]);
             throw new RuntimeException('Google token exchange failed: ' . $token['error']);
         }
 
-        $this->client->setAccessToken($token);
-        Log::info('Google token successfully retrieved', ['token' => $token]);
         return $token;
     }
 
@@ -102,7 +91,6 @@ class Google
     {
         $this->initClient();
         $this->client->setAccessToken($token);
-        Log::info('Connected using token', ['token' => $token]);
         return $this;
     }
 
@@ -110,7 +98,7 @@ class Google
     {
         $this->initClient();
         $token = $token ?? $this->client->getAccessToken();
-        Log::info('Revoking token', ['token' => $token]);
+        Log::info('Google token revoked');
         return $this->client->revokeToken($token);
     }
 
@@ -128,17 +116,16 @@ class Google
                 $newToken = $this->client->fetchAccessTokenWithRefreshToken($refreshToken);
                 $this->client->setAccessToken(array_merge($this->client->getAccessToken(), $newToken));
 
-                Log::info('Token refreshed successfully', ['newToken' => $newToken]);
+                Log::info('Google token refreshed', [
+                    'account_id' => $account?->id
+                ]);
 
                 if ($account) {
                     $this->accountRepository->update([
                         'token' => $this->client->getAccessToken(),
                     ], $account->id);
-
-                    Log::info('Refreshed token saved to database', ['account_id' => $account->id]);
                 }
             } else {
-                Log::warning('Access token expired and no refresh token available.');
                 throw new RuntimeException('Access token expired and no refresh token available.');
             }
         }
@@ -155,11 +142,9 @@ class Google
     protected function getTokenFromSynchronizable(mixed $synchronizable): array
     {
         return match (true) {
-            // Existing support for Account
             $synchronizable instanceof \Webkul\Google\Models\Account =>
             $synchronizable->token,
 
-            // ✅ New support for Calendar
             $synchronizable instanceof \Webkul\Google\Models\Calendar =>
             $synchronizable->account->token,
 
@@ -167,7 +152,6 @@ class Google
             throw new \RuntimeException('Invalid synchronizable type.'),
         };
     }
-
 
     public function client(): Google_Client
     {

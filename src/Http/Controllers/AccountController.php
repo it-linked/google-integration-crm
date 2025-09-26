@@ -31,60 +31,46 @@ class AccountController extends Controller
             return redirect()->route('admin.google.index', ['route' => 'calendar']);
         }
 
-        return view('google::'.request('route').'.index', compact('account'));
+        return view('google::' . request('route') . '.index', compact('account'));
     }
 
     public function store(): RedirectResponse
     {
         $account = $this->accountRepository->findOneByField('user_id', auth()->user()->id);
-        Log::info('AccountController@store called', [
-            'user_id' => auth()->user()->id,
-            'existing_account' => $account ? true : false,
-            'route' => request('route'),
-        ]);
 
         if ($account) {
             $this->accountRepository->update([
                 'scopes' => array_merge($account->scopes ?? [], [request('route')]),
             ], $account->id);
 
-            Log::info('Updated existing account scopes', [
-                'account_id' => $account->id,
-                'new_scopes' => $account->scopes
+            Log::info('Google account scopes updated', [
+                'account_id' => $account->id
             ]);
         } else {
             if (! request()->has('code')) {
                 session()->put('route', request('route'));
-                $authUrl = $this->google->client()->createAuthUrl();
-                Log::info('Redirecting user to Google OAuth', ['auth_url' => $authUrl]);
-                return redirect($authUrl);
+                return redirect($this->google->client()->createAuthUrl());
             }
 
-            // Exchange code for token
             $token = $this->google->authenticate(request()->get('code'));
             $this->google->connectUsing($token);
 
-            Log::info('Token retrieved and connected', ['token' => $token]);
-
-            // Retrieve user info (Oauth2)
             $userInfo = $this->google->service('Oauth2')->userinfo->get();
-            Log::info('User info retrieved from Google', [
-                'google_id' => $userInfo->id,
-                'email' => $userInfo->email
-            ]);
 
-            // Store in DB
             $account = $this->userRepository->find(auth()->user()->id)->accounts()->updateOrCreate(
-                [ 'google_id' => $userInfo->id ],
+                ['google_id' => $userInfo->id],
                 [
                     'name'   => $userInfo->email,
                     'token'  => $token,
                     'scopes' => [session()->get('route', 'calendar')],
                 ]
             );
-            Log::info('Google account stored in DB', ['account_id' => $account->id]);
 
-            // Connect & refresh if needed
+            Log::info('Google account created', [
+                'account_id' => $account->id,
+                'email'      => $userInfo->email
+            ]);
+
             $this->google->connectWithSynchronizable($account);
         }
 

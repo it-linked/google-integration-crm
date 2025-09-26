@@ -21,11 +21,9 @@ class CalendarController extends Controller
     public function sync(int $id): RedirectResponse
     {
         $account = $this->accountRepository->findOrFail($id);
-        Log::info('CalendarController@sync called', ['account_id' => $account->id, 'user_id' => auth()->id()]);
 
         $primaryCalendar = null;
 
-        // Mark the selected calendar as primary
         foreach ($account->calendars as $calendar) {
             if ($calendar->id == request('calendar_id')) {
                 $calendar->update(['is_primary' => 1]);
@@ -36,33 +34,28 @@ class CalendarController extends Controller
         }
 
         if (! $primaryCalendar) {
-            Log::warning('No calendar matched the provided ID', ['calendar_id' => request('calendar_id')]);
             session()->flash('error', trans('google::app.calendar.index.no-calendar-selected'));
             return redirect()->back();
         }
 
         try {
-            // Connect the Google client using the account
             $this->google->connectWithSynchronizable($account);
-
-            // Auto-refresh token if expired
             $this->google->refreshIfExpired($account);
 
-            // Trigger synchronization
             $primaryCalendar->synchronization->ping();
             $primaryCalendar->synchronization->startListeningForChanges();
 
-            Log::info('Calendar synchronized successfully', [
-                'account_id' => $account->id,
+            Log::info('Google calendar synced', [
+                'account_id'  => $account->id,
                 'calendar_id' => $primaryCalendar->id
             ]);
 
             session()->flash('success', trans('google::app.account-synced'));
         } catch (\Throwable $e) {
-            Log::error('Failed to sync calendar', [
-                'account_id' => $account->id,
+            Log::error('Google calendar sync failed', [
+                'account_id'  => $account->id,
                 'calendar_id' => $primaryCalendar->id,
-                'error' => $e->getMessage()
+                'error'       => $e->getMessage()
             ]);
 
             session()->flash('error', trans('google::app.calendar.index.sync-failed'));
