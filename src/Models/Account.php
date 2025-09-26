@@ -7,6 +7,7 @@ use Webkul\Google\Concerns\Synchronizable;
 use Webkul\Google\Contracts\Account as AccountContract;
 use Webkul\Google\Jobs\SynchronizeCalendars;
 use Webkul\Google\Jobs\WatchCalendars;
+use Illuminate\Support\Facades\DB;
 
 class Account extends Model implements AccountContract
 {
@@ -48,11 +49,13 @@ class Account extends Model implements AccountContract
      */
     public function synchronize()
     {
-        SynchronizeCalendars::dispatch($this);
+        $tenantDb = DB::connection($this->getConnectionName())->getDatabaseName();
+        SynchronizeCalendars::dispatch($this, $tenantDb);
     }
 
     public function watch()
     {
-        WatchCalendars::dispatch($this);
+        $tenantDb = DB::connection($this->getConnectionName())->getDatabaseName();
+        WatchCalendars::dispatch($this, $tenantDb);
     }
 }
