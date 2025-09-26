@@ -51,6 +51,21 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
             } while ($pageToken);
         } catch (Google_Service_Exception $e) {
 
+            // Handle invalid sync token (410) automatically
+            if ($e->getCode() === 410) {
+                Log::warning('Sync token invalid, resetting token for full sync', [
+                    'account_id' => $this->synchronizable->id,
+                    'tenant_db' => $this->tenantDb,
+                ]);
+
+                // Reset token to trigger full sync
+                $this->synchronization->update(['token' => null]);
+
+                // Retry full sync without sync token
+                unset($options['syncToken']);
+                return $this->getGoogleRequest($service, $options);
+            }
+
             if ($e->getCode() === 404) {
                 Log::warning('Google calendar not found, disabling synchronization', [
                     'google_id' => $this->synchronizable->google_id,
@@ -70,28 +85,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 return [];
             }
 
-            if ($e->getCode() === 410) {
-                // Sync token invalid — full sync required
-                Log::warning('Sync token invalid, performing full sync', [
-                    'account_id' => $this->synchronizable->id,
-                    'tenant_db' => $this->tenantDb,
-                ]);
-
-                // Clear the old token
-                $this->synchronization->update(['token' => null]);
-                unset($options['syncToken']);
-
-                // Retry full sync
-                $pageToken = null;
-                do {
-                    $response = $service->events->listEvents($this->synchronizable->google_id, $options);
-
-                    $allEvents = array_merge($allEvents, $response->getItems());
-                    $pageToken = $response->getNextPageToken();
-                } while ($pageToken);
-            } else {
-                throw $e;
-            }
+            throw $e;
         }
 
         return $allEvents;
