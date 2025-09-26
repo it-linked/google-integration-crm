@@ -17,7 +17,6 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
 
     public function getGoogleRequest($service, $options)
     {
-        $calendarId = $this->getPrimaryCalendarId();
         $options['singleEvents'] = true;
 
         if ($this->synchronization->token) {
@@ -26,6 +25,9 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
         } else {
             $options['orderBy'] = 'startTime';
         }
+
+        $calendarId = $this->synchronizable->calendars->firstWhere('is_primary', 1)?->google_id 
+            ?? $this->synchronizable->google_id;
 
         Log::info('SynchronizeEvents: fetching events', [
             'account_id' => $this->synchronizable->id ?? null,
@@ -51,6 +53,8 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 $pageToken = $response->getNextPageToken();
             } while ($pageToken);
         } catch (Google_Service_Exception $e) {
+
+            // Handle invalid sync token (410)
             if ($e->getCode() === 410) {
                 Log::warning('Sync token invalid, resetting token for full sync', [
                     'account_id' => $this->synchronizable->id,
@@ -58,6 +62,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 ]);
 
                 $this->synchronization->update(['token' => null]);
+
                 unset($options['syncToken']);
                 return $this->getGoogleRequest($service, $options);
             }
@@ -92,41 +97,48 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
         $end   = Carbon::parse($googleEvent->end->dateTime ?? $googleEvent->end->date);
 
         if ($googleEvent->status === 'cancelled') {
-            $this->synchronizable->events()->where('google_id', $googleEvent->id)->delete();
+            foreach ($this->synchronizable->calendars as $calendar) {
+                $calendar->events()->where('google_id', $googleEvent->id)->delete();
+            }
             return;
         }
 
         if ($start->isPast()) return;
 
-        $event = $this->synchronizable->events()->updateOrCreate(
-            ['google_id' => $googleEvent->id],
-            []
-        );
+        foreach ($this->synchronizable->calendars as $calendar) {
+            $event = $calendar->events()->updateOrCreate(
+                ['google_id' => $googleEvent->id],
+                [] // Update fields if needed
+            );
 
-        $activity = $event->activity()->updateOrCreate(
-            ['id' => $event->activity_id],
-            [
-                'title' => $googleEvent->summary,
-                'comment' => $googleEvent->description ?? '',
-                'schedule_from' => $start,
-                'schedule_to' => $end,
-                'user_id' => $this->synchronizable->account->user_id,
-                'type' => 'meeting',
-            ]
-        );
+            $activity = $event->activity()->updateOrCreate(
+                ['id' => $event->activity_id],
+                [
+                    'title' => $googleEvent->summary,
+                    'comment' => $googleEvent->description ?? '',
+                    'schedule_from' => $start,
+                    'schedule_to' => $end,
+                    'user_id' => $this->synchronizable->user->id,
+                    'type' => 'meeting',
+                ]
+            );
 
-        $event->update(['activity_id' => $activity->id]);
+            $event->update(['activity_id' => $activity->id]);
 
-        Log::info('SynchronizeEvents: event synced', [
-            'event_id' => $event->id,
-            'google_id' => $googleEvent->id,
-            'tenant_db' => $this->tenantDb,
-        ]);
+            Log::info('SynchronizeEvents: event synced', [
+                'event_id' => $event->id,
+                'google_id' => $googleEvent->id,
+                'calendar_id' => $calendar->id,
+                'tenant_db' => $this->tenantDb,
+            ]);
+        }
     }
 
     public function dropAllSyncedItems()
     {
-        $this->synchronizable->events()->delete();
+        foreach ($this->synchronizable->calendars as $calendar) {
+            $calendar->events()->delete();
+        }
 
         Log::warning('SynchronizeEvents: dropped all events', [
             'account_id' => $this->synchronizable->id ?? null,

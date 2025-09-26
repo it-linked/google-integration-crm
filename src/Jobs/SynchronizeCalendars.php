@@ -14,100 +14,72 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function getGoogleRequest(mixed $service, mixed $options): mixed
+    public function getGoogleRequest($service, $options)
     {
-        Log::info('SynchronizeCalendars: starting request', [
-            'account_id' => $this->synchronizable->id ?? null,
-            'options'    => $options,
-        ]);
+        $allCalendars = [];
 
         try {
-            return $service->calendarList->listCalendarList($options);
+            $pageToken = null;
+            do {
+                if ($pageToken) {
+                    $options['pageToken'] = $pageToken;
+                } else {
+                    unset($options['pageToken']);
+                }
+
+                $response = $service->calendarList->listCalendarList($options);
+
+                $allCalendars = array_merge($allCalendars, $response->getItems());
+                $pageToken = $response->getNextPageToken();
+            } while ($pageToken);
         } catch (Google_Service_Exception $e) {
-            if ($e->getCode() === 410) {
-                Log::warning('Sync token invalid for calendars, resetting token', [
-                    'account_id' => $this->synchronizable->id,
-                    'tenant_db' => $this->tenantDb,
-                ]);
+            Log::error('SynchronizeCalendars: Google API error', [
+                'account_id' => $this->synchronizable->id,
+                'tenant_db' => $this->tenantDb,
+                'error' => $e->getMessage(),
+            ]);
 
-                $this->synchronization->update(['token' => null]);
-
-                unset($options['syncToken']);
-                return $this->getGoogleRequest($service, $options);
-            }
-
-            if ($e->getCode() === 404) {
-                Log::warning('Google calendar not found, disabling synchronization', [
-                    'google_id' => $this->synchronizable->google_id ?? null,
-                    'account_id' => $this->synchronizable->id,
-                    'tenant_db' => $this->tenantDb,
-                ]);
-
-                $this->synchronization->update(['active' => false]);
-                return [];
-            }
-
-            if ($e->getCode() === 401) {
-                Log::warning('Google access token invalid or expired', [
-                    'account_id' => $this->synchronizable->id,
-                    'tenant_db' => $this->tenantDb,
-                ]);
-                // Optional: refresh token logic
-                return [];
-            }
-
-            throw $e;
+            return [];
         }
+
+        Log::info('SynchronizeCalendars: total calendars fetched', [
+            'account_id' => $this->synchronizable->id,
+            'tenant_db' => $this->tenantDb,
+            'count' => count($allCalendars),
+        ]);
+
+        return $allCalendars;
     }
 
     public function syncItem($googleCalendar)
     {
-        Log::info('SynchronizeCalendars: processing item', [
-            'id'         => $googleCalendar->id,
-            'summary'    => $googleCalendar->summary,
-            'accessRole' => $googleCalendar->accessRole,
-            'primary'    => property_exists($googleCalendar, 'primary') ? $googleCalendar->primary : false,
-        ]);
-
-        if ($googleCalendar->deleted ?? false) {
-            Log::warning('SynchronizeCalendars: calendar marked deleted', [
-                'id' => $googleCalendar->id,
-            ]);
-
-            return $this->synchronizable->calendars()
-                ->where('google_id', $googleCalendar->id)
-                ->get()->each->delete();
-        }
-
-        if ($googleCalendar->accessRole !== 'owner') {
-            Log::warning('SynchronizeCalendars: skipped (not owner)', [
-                'id'         => $googleCalendar->id,
-                'accessRole' => $googleCalendar->accessRole,
-            ]);
-            return;
-        }
-
         $calendar = $this->synchronizable->calendars()->updateOrCreate(
             ['google_id' => $googleCalendar->id],
             [
                 'name'     => $googleCalendar->summary,
-                'color'    => $googleCalendar->backgroundColor ?? null,
-                'timezone' => $googleCalendar->timeZone ?? null,
+                'color'    => $googleCalendar->backgroundColor ?? '#9fe1e7',
+                'timezone' => $googleCalendar->timeZone ?? 'UTC',
+                'is_primary' => $googleCalendar->primary ?? false,
             ]
         );
 
-        Log::info('SynchronizeCalendars: calendar stored/updated', [
-            'db_id' => $calendar->id,
+        Log::info('SynchronizeCalendars: calendar synced', [
+            'calendar_id' => $calendar->id,
             'google_id' => $googleCalendar->id,
+            'account_id' => $this->synchronizable->id,
+            'tenant_db' => $this->tenantDb,
         ]);
+
+        return $calendar;
     }
 
     public function dropAllSyncedItems()
     {
-        Log::warning('SynchronizeCalendars: dropping all calendars', [
-            'account_id' => $this->synchronizable->id ?? null,
-        ]);
+        $this->synchronizable->calendars()->delete();
 
-        $this->synchronizable->calendars->each->delete();
+        Log::warning('SynchronizeCalendars: dropped all calendars', [
+            'account_id' => $this->synchronizable->id,
+            'tenant_db' => $this->tenantDb,
+        ]);
     }
 }
