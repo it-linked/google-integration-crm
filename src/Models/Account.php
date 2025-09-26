@@ -53,7 +53,7 @@ class Account extends Model implements AccountContract
         $tenantDb = DB::connection($this->getConnectionName())->getDatabaseName();
         SynchronizeCalendars::dispatch($this, $tenantDb);
         // Dispatch event sync
-        SynchronizeEvents::dispatch($this->account, $tenantDb);
+        SynchronizeEvents::dispatch($this, $tenantDb);
     }
 
     public function watch()
