@@ -3,10 +3,12 @@
 namespace Webkul\Google\Jobs;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 abstract class WatchResource
 {
     protected $synchronizable;
+    protected ?\Google_Service_Calendar $googleService = null;
 
     /**
      * Create a new job instance.
@@ -30,7 +32,7 @@ abstract class WatchResource
 
         try {
             $response = $this->getGoogleRequest(
-                $this->synchronizable->getGoogleService('Calendar'),
+                $this->getGoogleService(),
                 $synchronization->asGoogleChannel()
             );
 
@@ -39,10 +41,29 @@ abstract class WatchResource
                 'expired_at'  => Carbon::createFromTimestampMs($response->getExpiration()),
             ]);
         } catch (\Google_Service_Exception $e) {
-            // If we reach an error at this point, it is likely that
-            // push notifications are not allowed for this resource.
-            // Instead we will sync it manually at regular interval.
+            Log::warning('WatchResource: Google push notification failed', [
+                'error' => $e->getMessage(),
+                'account_id' => $this->synchronizable->id ?? null,
+            ]);
         }
+    }
+
+    /**
+     * Lazy-load Google service instance.
+     */
+    protected function getGoogleService(): \Google_Service_Calendar
+    {
+        if ($this->googleService) {
+            return $this->googleService;
+        }
+
+        Log::info('Creating Google service instance: Google_Service_Calendar');
+
+        $this->googleService = $this->synchronizable->getGoogleService('Calendar');
+
+        Log::info('Google service initialized');
+
+        return $this->googleService;
     }
 
     /**
