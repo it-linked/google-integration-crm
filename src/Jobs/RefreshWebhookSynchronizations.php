@@ -1,25 +1,23 @@
 <?php
 
-namespace Webkul\Google\Jobs;
-
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
-use Webkul\Google\Models\Synchronization;
-
 class RefreshWebhookSynchronizations implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /**
-     * Handle the job.
-     *
-     * @return void
-     */
+    protected $tenantDb;
+
+    public function __construct(string $tenantDb)
+    {
+        $this->tenantDb = $tenantDb;
+    }
+
     public function handle()
     {
+        Config::set('database.connections.tenant.database', $this->tenantDb);
+        DB::purge('tenant');
+        DB::reconnect('tenant');
+        Config::set('database.default', 'tenant');
+
         Synchronization::query()
             ->whereNotNull('resource_id')
             ->whereNull('expired_at')
@@ -28,3 +26,4 @@ class RefreshWebhookSynchronizations implements ShouldQueue
             ->each->refreshWebhook();
     }
 }
+
