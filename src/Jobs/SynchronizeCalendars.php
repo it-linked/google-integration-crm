@@ -2,10 +2,17 @@
 
 namespace Webkul\Google\Jobs;
 
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class SynchronizeCalendars extends SynchronizeResource
+class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
 {
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
     /**
      * Get the Google request (lazy-loaded service).
      */
