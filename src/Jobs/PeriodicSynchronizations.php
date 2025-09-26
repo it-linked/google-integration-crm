@@ -11,28 +11,32 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Webkul\Google\Models\Synchronization;
 use Illuminate\Support\Facades\Log;
+use Webkul\Master\Models\AdminUserTenant;
 
 class PeriodicSynchronizations implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    protected $tenantDb;
     public $uniqueFor = 55; // ⬅️ job stays unique for 55 seconds
-
-    public function __construct(string $tenantDb)
-    {
-        $this->tenantDb = $tenantDb;
-    }
 
     public function handle()
     {
-        // Switch to tenant database
-        Config::set('database.connections.tenant.database', $this->tenantDb);
-        Log::info("db name" . $this->tenantDb);
-        DB::purge('tenant');
-        DB::reconnect('tenant');
-        Config::set('database.default', 'tenant');
+        $tenants = AdminUserTenant::all();
 
-        Synchronization::whereNull('resource_id')->get()->each->ping();
+        foreach ($tenants as $tenant) {
+            try {
+                // Switch to tenant database
+                Config::set('database.connections.tenant.database', $tenant->tenant_db);
+                DB::purge('tenant');
+                DB::reconnect('tenant');
+                Config::set('database.default', 'tenant');
+
+                Log::info("Running PeriodicSynchronizations for DB: {$tenant->tenant_db}");
+
+                Synchronization::whereNull('resource_id')->get()->each->ping();
+            } catch (\Exception $e) {
+                Log::error("Error in PeriodicSynchronizations for DB {$tenant->tenant_db}: " . $e->getMessage());
+            }
+        }
     }
 }
