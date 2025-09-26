@@ -19,17 +19,40 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
         $options['singleEvents'] = true;
         $options['orderBy'] = 'startTime';
 
-        if ($this->synchronization->token) {
-            unset($options['timeMin'], $options['timeMax']);
-            $options['syncToken'] = $this->synchronization->token;
-        }
-
-        Log::info('SynchronizeEvents: fetching events', [
+        Log::info('SynchronizeEvents: fetching events for account', [
             'account_id' => $this->synchronizable->id ?? null,
             'tenant_db' => $this->tenantDb,
         ]);
 
-        return $service->events->listEvents($this->synchronizable->google_id, $options);
+        $allEvents = [];
+
+        // Loop through all calendars of this account
+        foreach ($this->synchronizable->calendars as $calendar) {
+            $calendarId = $calendar->google_calendar_id ?? 'primary';
+
+            $pageToken = null;
+            $syncToken = $this->synchronization->token;
+
+            do {
+                $opts = $options;
+                if ($syncToken) {
+                    unset($opts['timeMin'], $opts['timeMax']);
+                    $opts['syncToken'] = $syncToken;
+                }
+                if ($pageToken) {
+                    $opts['pageToken'] = $pageToken;
+                }
+
+                $list = $service->events->listEvents($calendarId, $opts);
+
+                $allEvents = array_merge($allEvents, $list->getItems());
+
+                $pageToken = $list->getNextPageToken();
+                $syncToken = null; // Only use syncToken on first request
+            } while ($pageToken);
+        }
+
+        return $allEvents;
     }
 
     public function syncItem($googleEvent)
