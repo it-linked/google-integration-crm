@@ -10,6 +10,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Webkul\Google\Models\Synchronization;
+use Illuminate\Support\Facades\Log;
 
 class PeriodicSynchronizations implements ShouldQueue
 {
