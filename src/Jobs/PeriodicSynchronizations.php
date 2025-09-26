@@ -17,7 +17,7 @@ class PeriodicSynchronizations implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $uniqueFor = 55; // Job stays unique for 55 seconds
+    public $uniqueFor = 55;
 
     public function handle()
     {
@@ -30,7 +30,6 @@ class PeriodicSynchronizations implements ShouldQueue
             Log::info("Processing tenant", ['tenant_db' => $tenant->tenant_db, 'domain' => $tenant->domain]);
 
             try {
-                // Switch to tenant DB
                 Config::set('database.connections.tenant.database', $tenant->tenant_db);
                 DB::purge('tenant');
                 DB::reconnect('tenant');
@@ -38,7 +37,6 @@ class PeriodicSynchronizations implements ShouldQueue
 
                 Log::info("Switched to tenant database", ['database' => $tenant->tenant_db]);
 
-                // Fetch synchronizations with no resource_id
                 $synchronizations = Synchronization::on('tenant')
                     ->whereNotNull('resource_id')
                     ->get();

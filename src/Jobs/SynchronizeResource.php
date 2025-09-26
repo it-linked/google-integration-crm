@@ -74,6 +74,19 @@ abstract class SynchronizeResource
         return $this->googleService;
     }
 
+    protected function getPrimaryCalendarId(): ?string
+    {
+        $primaryCalendar = $this->synchronizable->calendars()
+            ->where('is_primary', 1)
+            ->first();
+
+        if ($primaryCalendar) {
+            return $primaryCalendar->google_id;
+        }
+
+        return $this->synchronizable->google_id;
+    }
+
     public function handle()
     {
         try {
@@ -85,7 +98,6 @@ abstract class SynchronizeResource
 
             $options = compact('pageToken', 'syncToken');
 
-            // Fetch events/items from Google
             $list = $this->getGoogleRequest($service, $options);
 
             if (empty($list)) {
@@ -96,12 +108,10 @@ abstract class SynchronizeResource
                 return;
             }
 
-            // Sync each item
             foreach ($list as $item) {
                 $this->syncItem($item);
             }
 
-            // Save a new sync token if available
             if (method_exists($list, 'getNextSyncToken') && $list->getNextSyncToken()) {
                 $this->synchronization->update([
                     'token' => $list->getNextSyncToken(),
@@ -128,7 +138,6 @@ abstract class SynchronizeResource
             ]);
         }
     }
-
 
     abstract public function getGoogleRequest($service, $options);
     abstract public function syncItem($item);

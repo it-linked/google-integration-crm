@@ -17,6 +17,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
 
     public function getGoogleRequest($service, $options)
     {
+        $calendarId = $this->getPrimaryCalendarId();
         $options['singleEvents'] = true;
 
         if ($this->synchronization->token) {
@@ -30,7 +31,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
             'account_id' => $this->synchronizable->id ?? null,
             'tenant_db' => $this->tenantDb,
             'sync_token' => $this->synchronization->token ?? null,
-            'google_id' => $this->synchronizable->google_id,
+            'calendar_id' => $calendarId,
         ]);
 
         $allEvents = [];
@@ -44,31 +45,26 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                     unset($options['pageToken']);
                 }
 
-                $response = $service->events->listEvents($this->synchronizable->google_id, $options);
+                $response = $service->events->listEvents($calendarId, $options);
 
                 $allEvents = array_merge($allEvents, $response->getItems());
                 $pageToken = $response->getNextPageToken();
             } while ($pageToken);
         } catch (Google_Service_Exception $e) {
-
-            // Handle invalid sync token (410) automatically
             if ($e->getCode() === 410) {
                 Log::warning('Sync token invalid, resetting token for full sync', [
                     'account_id' => $this->synchronizable->id,
                     'tenant_db' => $this->tenantDb,
                 ]);
 
-                // Reset token to trigger full sync
                 $this->synchronization->update(['token' => null]);
-
-                // Retry full sync without sync token
                 unset($options['syncToken']);
                 return $this->getGoogleRequest($service, $options);
             }
 
             if ($e->getCode() === 404) {
                 Log::warning('Google calendar not found, disabling synchronization', [
-                    'google_id' => $this->synchronizable->google_id,
+                    'calendar_id' => $calendarId,
                     'account_id' => $this->synchronizable->id,
                     'tenant_db' => $this->tenantDb,
                 ]);
@@ -81,7 +77,6 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                     'account_id' => $this->synchronizable->id,
                     'tenant_db' => $this->tenantDb,
                 ]);
-                // Optional: trigger token refresh logic here
                 return [];
             }
 
