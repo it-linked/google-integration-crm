@@ -26,7 +26,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
             $options['orderBy'] = 'startTime';
         }
 
-        $calendarId = $this->synchronizable->calendars->firstWhere('is_primary', 1)?->google_id 
+        $calendarId = $this->synchronizable->calendars->firstWhere('is_primary', 1)?->google_id
             ?? $this->synchronizable->google_id;
 
         Log::info('SynchronizeEvents: fetching events', [
@@ -51,18 +51,17 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
 
                 $allEvents = array_merge($allEvents, $response->getItems());
                 $pageToken = $response->getNextPageToken();
+
+                $this->lastResponse = $response; // store last response
             } while ($pageToken);
         } catch (Google_Service_Exception $e) {
-
-            // Handle invalid sync token (410)
-            if ($e->getCode() === 410) {
+            if ($e->getCode() === 410) { // invalid sync token
                 Log::warning('Sync token invalid, resetting token for full sync', [
                     'account_id' => $this->synchronizable->id,
                     'tenant_db' => $this->tenantDb,
                 ]);
 
                 $this->synchronization->update(['token' => null]);
-
                 unset($options['syncToken']);
                 return $this->getGoogleRequest($service, $options);
             }

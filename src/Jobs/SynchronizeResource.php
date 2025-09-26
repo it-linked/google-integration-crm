@@ -14,6 +14,7 @@ abstract class SynchronizeResource
     protected bool $tenantDbLoaded = false;
 
     protected ?\Google_Service_Calendar $googleService = null;
+    protected $lastResponse = null; // Store last Google response
 
     public function __construct($synchronizable, ?string $tenantDb = null)
     {
@@ -98,9 +99,9 @@ abstract class SynchronizeResource
 
             $options = compact('pageToken', 'syncToken');
 
-            $list = $this->getGoogleRequest($service, $options);
+            $allItems = $this->getGoogleRequest($service, $options);
 
-            if (empty($list)) {
+            if (empty($allItems)) {
                 Log::info('No items returned from Google, skipping synchronization', [
                     'account_id' => $this->synchronizable->id ?? null,
                     'tenant_db' => $this->tenantDb,
@@ -108,21 +109,25 @@ abstract class SynchronizeResource
                 return;
             }
 
-            foreach ($list as $item) {
+            foreach ($allItems as $item) {
                 $this->syncItem($item);
             }
 
-            if (method_exists($list, 'getNextSyncToken') && $list->getNextSyncToken()) {
-                $this->synchronization->update([
-                    'token' => $list->getNextSyncToken(),
-                    'last_synchronized_at' => now(),
-                ]);
+            // Safely update next sync token
+            if ($this->lastResponse && method_exists($this->lastResponse, 'getNextSyncToken')) {
+                $nextToken = $this->lastResponse->getNextSyncToken();
+                if ($nextToken) {
+                    $this->synchronization->update([
+                        'token' => $nextToken,
+                        'last_synchronized_at' => now(),
+                    ]);
 
-                Log::info('Next sync token updated', [
-                    'account_id' => $this->synchronizable->id ?? null,
-                    'tenant_db'  => $this->tenantDb,
-                    'next_sync_token' => $list->getNextSyncToken(),
-                ]);
+                    Log::info('Next sync token updated', [
+                        'account_id' => $this->synchronizable->id ?? null,
+                        'tenant_db'  => $this->tenantDb,
+                        'next_sync_token' => $nextToken,
+                    ]);
+                }
             }
 
             Log::info('Synchronization completed', [
@@ -143,3 +148,4 @@ abstract class SynchronizeResource
     abstract public function syncItem($item);
     abstract public function dropAllSyncedItems();
 }
+
