@@ -9,6 +9,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Google_Service_Exception;
 
 class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
 {
@@ -19,38 +20,57 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
         $options['singleEvents'] = true;
 
         if ($this->synchronization->token) {
-            // When using syncToken, cannot use orderBy or time range
             unset($options['timeMin'], $options['timeMax'], $options['orderBy']);
             $options['syncToken'] = $this->synchronization->token;
         } else {
-            // Initial sync or full sync: order by startTime
             $options['orderBy'] = 'startTime';
-            // Optionally, set timeMin/timeMax here
-            // $options['timeMin'] = Carbon::now()->subYears(2)->toRfc3339String();
-            // $options['timeMax'] = Carbon::now()->toRfc3339String();
         }
 
         Log::info('SynchronizeEvents: fetching events', [
             'account_id' => $this->synchronizable->id ?? null,
             'tenant_db' => $this->tenantDb,
             'sync_token' => $this->synchronization->token ?? null,
+            'google_id' => $this->synchronizable->google_id,
         ]);
 
         $allEvents = [];
         $pageToken = $options['pageToken'] ?? null;
 
-        do {
-            if ($pageToken) {
-                $options['pageToken'] = $pageToken;
-            } else {
-                unset($options['pageToken']);
+        try {
+            do {
+                if ($pageToken) {
+                    $options['pageToken'] = $pageToken;
+                } else {
+                    unset($options['pageToken']);
+                }
+
+                $response = $service->events->listEvents($this->synchronizable->google_id, $options);
+
+                $allEvents = array_merge($allEvents, $response->getItems());
+                $pageToken = $response->getNextPageToken();
+            } while ($pageToken);
+        } catch (Google_Service_Exception $e) {
+            if ($e->getCode() === 404) {
+                Log::warning('Google calendar not found, disabling synchronization', [
+                    'google_id' => $this->synchronizable->google_id,
+                    'account_id' => $this->synchronizable->id,
+                    'tenant_db' => $this->tenantDb,
+                ]);
+                $this->synchronization->update(['active' => false]);
+                return [];
             }
 
-            $response = $service->events->listEvents($this->synchronizable->google_id, $options);
+            if ($e->getCode() === 401) {
+                Log::warning('Google access token invalid or expired', [
+                    'account_id' => $this->synchronizable->id,
+                    'tenant_db' => $this->tenantDb,
+                ]);
+                // Optional: trigger token refresh logic here
+                return [];
+            }
 
-            $allEvents = array_merge($allEvents, $response->getItems());
-            $pageToken = $response->getNextPageToken();
-        } while ($pageToken);
+            throw $e;
+        }
 
         return $allEvents;
     }

@@ -83,36 +83,46 @@ abstract class SynchronizeResource
             $pageToken = null;
             $syncToken = $this->synchronization->token;
 
-            do {
-                $options = compact('pageToken', 'syncToken');
-                $list = $this->getGoogleRequest($service, $options);
+            $options = compact('pageToken', 'syncToken');
 
-                foreach ($list->getItems() as $item) {
-                    $this->syncItem($item);
-                }
+            // Fetch events/items from Google
+            $list = $this->getGoogleRequest($service, $options);
 
-                $pageToken = $list->getNextPageToken();
-            } while ($pageToken);
+            if (empty($list)) {
+                Log::info('No items returned from Google, skipping synchronization', [
+                    'account_id' => $this->synchronizable->id ?? null,
+                    'tenant_db' => $this->tenantDb,
+                ]);
+                return;
+            }
 
-            $this->synchronization->update([
-                'token' => $list->getNextSyncToken(),
-                'last_synchronized_at' => now(),
-            ]);
+            // If the result is a single-level array (like events)
+            foreach ($list as $item) {
+                $this->syncItem($item);
+            }
+
+            // Update synchronization token if available
+            if (method_exists($list, 'getNextSyncToken') && $list->getNextSyncToken()) {
+                $this->synchronization->update([
+                    'token' => $list->getNextSyncToken(),
+                    'last_synchronized_at' => now(),
+                ]);
+            }
 
             Log::info('Synchronization completed', [
                 'account_id' => $this->synchronizable->id ?? null,
                 'tenant_db'  => $this->tenantDb,
             ]);
-
         } catch (\Exception $e) {
             Log::error('SynchronizeResource job failed', [
-                'error'     => $e->getMessage(),
-                'stack'     => $e->getTraceAsString(),
-                'account_id'=> $this->synchronizable->id ?? null,
-                'tenant_db' => $this->tenantDb,
+                'error'      => $e->getMessage(),
+                'stack'      => $e->getTraceAsString(),
+                'account_id' => $this->synchronizable->id ?? null,
+                'tenant_db'  => $this->tenantDb,
             ]);
         }
     }
+
 
     abstract public function getGoogleRequest($service, $options);
     abstract public function syncItem($item);
