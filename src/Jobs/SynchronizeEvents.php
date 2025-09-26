@@ -2,36 +2,28 @@
 
 namespace Webkul\Google\Jobs;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
-class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
+class SynchronizeEvents extends SynchronizeResource
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
     /**
      * Get all events from Google Calendar.
      */
-    public function getGoogleRequest(mixed $service, mixed $options): mixed
+    public function getGoogleRequest($service, $options)
     {
-        // Expand recurring events into individual occurrences
+        $service = $this->getGoogleService(); // lazy-loaded
+
+        // Expand recurring events
         $options['singleEvents'] = true;
         $options['orderBy'] = 'startTime';
 
         Log::info('SynchronizeEvents: starting request', [
             'account_id' => $this->synchronizable->id ?? null,
-            'options'    => $options
+            'options'    => $options,
         ]);
 
-        return $service->events->listEvents(
-            $this->synchronizable->google_id,
-            $options
-        );
+        return $service->events->listEvents($this->synchronizable->google_id, $options);
     }
 
     /**
@@ -39,7 +31,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
      */
     public function synchronize(): void
     {
-        $service = $this->synchronizable->getGoogleService('Calendar');
+        $service = $this->getGoogleService();
 
         $googleEvents = $this->getGoogleRequest($service, [
             'timeMin' => now()->subYears(1)->toAtomString(),
@@ -48,7 +40,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
 
         $googleIds = collect($googleEvents->getItems())->pluck('id')->toArray();
 
-        // Delete events in CRM that no longer exist in Google Calendar
+        // Delete missing events
         $deletedCount = $this->synchronizable->events()
             ->whereNotIn('google_id', $googleIds)
             ->delete();
@@ -58,7 +50,6 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
             'account_id'    => $this->synchronizable->id,
         ]);
 
-        // Sync remaining or new events
         foreach ($googleEvents->getItems() as $googleEvent) {
             $this->syncItem($googleEvent);
         }
@@ -84,33 +75,30 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
             'end'       => $endDatetime->toDateTimeString(),
         ]);
 
-        // Delete cancelled events
         if ($googleEvent->status === 'cancelled') {
             $this->synchronizable->events()
                 ->where('google_id', $googleEvent->id)
                 ->delete();
 
             Log::warning('SynchronizeEvents: deleting cancelled event', [
-                'google_id' => $googleEvent->id
+                'google_id' => $googleEvent->id,
             ]);
+
             return;
         }
 
-        // Skip past events if desired
         if ($startDatetime->isPast()) {
             Log::info('SynchronizeEvents: skipped (past event)', [
-                'google_id' => $googleEvent->id
+                'google_id' => $googleEvent->id,
             ]);
             return;
         }
 
-        // Create or update event record
         $event = $this->synchronizable->events()->updateOrCreate(
             ['google_id' => $googleEvent->id],
             []
         );
 
-        // Create or update activity linked to the event
         $activity = $event->activity()->updateOrCreate(
             ['id' => $event->activity_id],
             [
@@ -125,14 +113,10 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
 
         $event->update(['activity_id' => $activity->id]);
 
-        Log::info('SynchronizeEvents: event record stored/updated', [
-            'db_event_id' => $event->id,
-            'google_id'   => $googleEvent->id
-        ]);
-
-        Log::info('SynchronizeEvents: activity stored/updated', [
-            'activity_id'     => $activity->id,
-            'google_event_id' => $googleEvent->id
+        Log::info('SynchronizeEvents: event and activity stored/updated', [
+            'event_id'    => $event->id,
+            'activity_id' => $activity->id,
+            'google_id'   => $googleEvent->id,
         ]);
     }
 

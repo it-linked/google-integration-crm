@@ -2,22 +2,17 @@
 
 namespace Webkul\Google\Jobs;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
+class SynchronizeCalendars extends SynchronizeResource
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
     /**
-     * Get the google request.
+     * Get the Google request (lazy-loaded service).
      */
-    public function getGoogleRequest(mixed $service, mixed $options): mixed
+    public function getGoogleRequest($service, $options)
     {
+        $service = $this->getGoogleService(); // ensure lazy-loading
+
         Log::info('SynchronizeCalendars: starting request', [
             'account_id' => $this->synchronizable->id ?? null,
             'options'    => $options,
@@ -45,7 +40,9 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
 
             return $this->synchronizable->calendars()
                 ->where('google_id', $googleCalendar->id)
-                ->get()->each->delete();
+                ->get()
+                ->each
+                ->delete();
         }
 
         if ($googleCalendar->accessRole !== 'owner') {
@@ -66,13 +63,13 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
         );
 
         Log::info('SynchronizeCalendars: calendar stored/updated', [
-            'db_id' => $calendar->id,
+            'db_id'     => $calendar->id,
             'google_id' => $googleCalendar->id,
         ]);
     }
 
     /**
-     * Drop all synced items.
+     * Drop all synced calendars.
      */
     public function dropAllSyncedItems()
     {
