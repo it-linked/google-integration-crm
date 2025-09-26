@@ -9,28 +9,23 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
+class SynchronizeCalendars extends WatchResource implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /**
-     * Get the Google request (lazy-loaded service).
-     */
     public function getGoogleRequest($service, $options)
     {
-        $service = $this->getGoogleService(); // ensure lazy-loading
+        $service = $this->getGoogleService(); // lazy-load
 
         Log::info('SynchronizeCalendars: starting request', [
             'account_id' => $this->synchronizable->id ?? null,
             'options'    => $options,
+            'tenant_db'  => $this->tenantDb,
         ]);
 
         return $service->calendarList->listCalendarList($options);
     }
 
-    /**
-     * Sync a single Google calendar item.
-     */
     public function syncItem($googleCalendar)
     {
         Log::info('SynchronizeCalendars: processing item', [
@@ -38,13 +33,10 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
             'summary'    => $googleCalendar->summary,
             'accessRole' => $googleCalendar->accessRole,
             'primary'    => property_exists($googleCalendar, 'primary') ? $googleCalendar->primary : false,
+            'tenant_db'  => $this->tenantDb,
         ]);
 
         if ($googleCalendar->deleted) {
-            Log::warning('SynchronizeCalendars: calendar marked deleted', [
-                'id' => $googleCalendar->id,
-            ]);
-
             return $this->synchronizable->calendars()
                 ->where('google_id', $googleCalendar->id)
                 ->get()
@@ -53,10 +45,6 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
         }
 
         if ($googleCalendar->accessRole !== 'owner') {
-            Log::warning('SynchronizeCalendars: skipped (not owner)', [
-                'id'         => $googleCalendar->id,
-                'accessRole' => $googleCalendar->accessRole,
-            ]);
             return;
         }
 
@@ -72,16 +60,15 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
         Log::info('SynchronizeCalendars: calendar stored/updated', [
             'db_id'     => $calendar->id,
             'google_id' => $googleCalendar->id,
+            'tenant_db' => $this->tenantDb,
         ]);
     }
 
-    /**
-     * Drop all synced calendars.
-     */
     public function dropAllSyncedItems()
     {
         Log::warning('SynchronizeCalendars: dropping all calendars', [
             'account_id' => $this->synchronizable->id ?? null,
+            'tenant_db'  => $this->tenantDb,
         ]);
 
         $this->synchronizable->calendars->each->delete();

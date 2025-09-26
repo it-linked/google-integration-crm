@@ -2,93 +2,74 @@
 
 namespace Webkul\Google\Jobs;
 
-abstract class SynchronizeResource
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+abstract class WatchResource
 {
     protected $synchronizable;
-    protected $synchronization;
-
-    // Lazy-loaded Google service
     protected ?\Google_Service_Calendar $googleService = null;
+    protected ?string $tenantDb = null;
 
-    // Lazy-loaded tenant DB flag
-    protected bool $tenantDbLoaded = false;
-
-    public function __construct($synchronizable)
+    public function __construct($synchronizable, ?string $tenantDb = null)
     {
         $this->synchronizable = $synchronizable;
-        $this->synchronization = $synchronizable->synchronization;
+        $this->tenantDb = $tenantDb;
     }
 
-    /**
-     * Ensure tenant database is selected
-     */
-    protected function ensureTenantDbLoaded(): void
+    public function handle()
     {
-        if ($this->tenantDbLoaded) return;
+        // ✅ Switch to tenant DB if provided
+        if ($this->tenantDb) {
+            Config::set('database.connections.tenant.database', $this->tenantDb);
+            DB::purge('tenant');
+            DB::reconnect('tenant');
+            Config::set('database.default', 'tenant');
 
-        $tenantConnection = $this->synchronizable->getConnectionName(); // your tenant model must provide this
-        config(['database.connections.tenant.database' => $tenantConnection]);
-        \DB::setDefaultConnection('tenant');
+            Log::info("WatchResource: switched to tenant DB: {$this->tenantDb}");
+        }
 
-        \Log::info('SynchronizeResource: Tenant DB switched', [
-            'tenant_id' => $this->synchronizable->id,
-            'connection' => \DB::getDefaultConnection()
-        ]);
+        $synchronization = $this->synchronizable->synchronization;
 
-        $this->tenantDbLoaded = true;
+        try {
+            $response = $this->getGoogleRequest(
+                $this->getGoogleService(),
+                $synchronization->asGoogleChannel()
+            );
+
+            $synchronization->update([
+                'resource_id' => $response->getResourceId(),
+                'expired_at'  => Carbon::createFromTimestampMs($response->getExpiration()),
+            ]);
+
+            Log::info('WatchResource: updated synchronization', [
+                'resource_id' => $response->getResourceId(),
+                'expired_at'  => Carbon::createFromTimestampMs($response->getExpiration()),
+            ]);
+        } catch (\Google_Service_Exception $e) {
+            Log::warning('WatchResource: Google push notification failed', [
+                'error'      => $e->getMessage(),
+                'account_id' => $this->synchronizable->id ?? null,
+            ]);
+        }
     }
 
-    /**
-     * Lazy-load Google Calendar service
-     */
     protected function getGoogleService(): \Google_Service_Calendar
     {
         if ($this->googleService) {
             return $this->googleService;
         }
 
-        $this->ensureTenantDbLoaded();
+        Log::info('Creating Google service instance: Google_Service_Calendar');
 
         $this->googleService = $this->synchronizable->getGoogleService('Calendar');
+
+        Log::info('Google service initialized');
+
         return $this->googleService;
     }
 
-    public function handle()
-    {
-        $this->ensureTenantDbLoaded();
-        $service = $this->getGoogleService();
-
-        $pageToken = null;
-        $syncToken = $this->synchronization->token;
-
-        do {
-            $tokens = compact('pageToken', 'syncToken');
-
-            try {
-                $list = $this->getGoogleRequest($service, $tokens);
-            } catch (\Google_Service_Exception $e) {
-                if ($e->getCode() === 410) {
-                    $this->synchronization->update(['token' => null]);
-                    $this->dropAllSyncedItems();
-                    return $this->handle();
-                }
-                throw $e;
-            }
-
-            foreach ($list->getItems() as $item) {
-                $this->syncItem($item);
-            }
-
-            $pageToken = $list->getNextPageToken();
-        } while ($pageToken);
-
-        $this->synchronization->update([
-            'token'                => $list->getNextSyncToken(),
-            'last_synchronized_at' => now(),
-        ]);
-    }
-
-    abstract public function getGoogleRequest($service, $options);
-    abstract public function syncItem($item);
-    abstract public function dropAllSyncedItems();
+    abstract public function getGoogleRequest($service, $channel);
 }
