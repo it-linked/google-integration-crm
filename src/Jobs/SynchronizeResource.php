@@ -11,12 +11,14 @@ abstract class SynchronizeResource
     protected ?\Google_Service_Calendar $googleService = null;
 
     // Lazy-loaded tenant DB flag
+    protected string $tenantDb;
     protected bool $tenantDbLoaded = false;
 
-    public function __construct($synchronizable)
+    public function __construct($synchronizable, string $tenantDb)
     {
-        $this->synchronizable = $synchronizable;
-        $this->synchronization = $synchronizable->synchronization;
+        $this->synchronizable   = $synchronizable;
+        $this->synchronization  = $synchronizable->synchronization;
+        $this->tenantDb         = $tenantDb;
     }
 
     /**
@@ -26,13 +28,15 @@ abstract class SynchronizeResource
     {
         if ($this->tenantDbLoaded) return;
 
-        $tenantConnection = $this->synchronizable->getConnectionName(); // your tenant model must provide this
-        config(['database.connections.tenant.database' => $tenantConnection]);
+        config(['database.connections.tenant.database' => $this->tenantDb]);
+        \DB::purge('tenant');
+        \DB::reconnect('tenant');
         \DB::setDefaultConnection('tenant');
 
         \Log::info('SynchronizeResource: Tenant DB switched', [
-            'tenant_id' => $this->synchronizable->id,
-            'connection' => \DB::getDefaultConnection()
+            'tenant_db' => $this->tenantDb,
+            'model'     => get_class($this->synchronizable),
+            'id'        => $this->synchronizable->id,
         ]);
 
         $this->tenantDbLoaded = true;
