@@ -14,6 +14,7 @@ class RefreshWebhookSynchronizations implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     protected $tenantDb;
+    public $uniqueFor = 55; // ⬅️ job stays unique for 55 seconds
 
     public function __construct(string $tenantDb)
     {
@@ -29,8 +30,10 @@ class RefreshWebhookSynchronizations implements ShouldQueue
 
         Synchronization::query()
             ->whereNotNull('resource_id')
-            ->whereNull('expired_at')
-            ->orWhere('expired_at', '<', now()->addDays(2))
+            ->where(function ($q) {
+                $q->whereNull('expired_at')
+                    ->orWhere('expired_at', '<', now()->addDays(2));
+            })
             ->get()
             ->each->refreshWebhook();
     }

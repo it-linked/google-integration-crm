@@ -16,6 +16,7 @@ class PeriodicSynchronizations implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     protected $tenantDb;
+    public $uniqueFor = 55; // ⬅️ job stays unique for 55 seconds
 
     public function __construct(string $tenantDb)
     {

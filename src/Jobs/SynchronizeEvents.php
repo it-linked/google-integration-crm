@@ -15,6 +15,26 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
+     * MAIN entry point for the job.
+     */
+    public function handle(): void
+    {
+        // ✅ Prevent syncing too frequently (debounce)
+        if (
+            $this->synchronization->last_synchronized_at &&
+            $this->synchronization->last_synchronized_at->gt(now()->subMinutes(5))
+        ) {
+            Log::info('Skipping sync (too soon)', [
+                'sync_id' => $this->synchronization->id,
+            ]);
+            return;
+        }
+
+        // Run the actual sync logic
+        $this->synchronize();
+    }
+
+    /**
      * Get all events from Google Calendar.
      */
     public function getGoogleRequest($service, $options)
@@ -26,7 +46,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
 
         // ✅ Use saved sync token if present
         if ($this->synchronization->token) {
-            unset($options['timeMin'], $options['timeMax']); // Google forbids these when using syncToken
+            unset($options['timeMin'], $options['timeMax']); // Google forbids these with syncToken
             $options['syncToken'] = $this->synchronization->token;
         }
 
@@ -78,6 +98,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 $this->synchronization->token = $googleEvents->getNextSyncToken();
                 $this->synchronization->last_synchronized_at = now();
                 $this->synchronization->save();
+
                 Log::info('SynchronizeEvents: saved nextSyncToken', [
                     'sync_token' => $this->synchronization->token,
                 ]);
