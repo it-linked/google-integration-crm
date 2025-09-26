@@ -4,40 +4,62 @@ namespace Webkul\Google\Jobs;
 
 abstract class SynchronizeResource
 {
-    /**
-     * The synchronizable instance.
-     */
     protected $synchronizable;
-
-    /**
-     * The synchronization instance.
-     */
     protected $synchronization;
 
-    /**
-     * Create a new job instance.
-     *
-     * @return void
-     */
+    // Lazy-loaded Google service
+    protected ?\Google_Service_Calendar $googleService = null;
+
+    // Lazy-loaded tenant DB flag
+    protected bool $tenantDbLoaded = false;
+
     public function __construct($synchronizable)
     {
         $this->synchronizable = $synchronizable;
-
         $this->synchronization = $synchronizable->synchronization;
     }
 
     /**
-     * Execute the job.
-     *
-     * @return void
+     * Ensure tenant database is selected
      */
+    protected function ensureTenantDbLoaded(): void
+    {
+        if ($this->tenantDbLoaded) return;
+
+        $tenantConnection = $this->synchronizable->getConnectionName(); // your tenant model must provide this
+        config(['database.connections.tenant.database' => $tenantConnection]);
+        \DB::setDefaultConnection('tenant');
+
+        \Log::info('SynchronizeResource: Tenant DB switched', [
+            'tenant_id' => $this->synchronizable->id,
+            'connection' => \DB::getDefaultConnection()
+        ]);
+
+        $this->tenantDbLoaded = true;
+    }
+
+    /**
+     * Lazy-load Google Calendar service
+     */
+    protected function getGoogleService(): \Google_Service_Calendar
+    {
+        if ($this->googleService) {
+            return $this->googleService;
+        }
+
+        $this->ensureTenantDbLoaded();
+
+        $this->googleService = $this->synchronizable->getGoogleService('Calendar');
+        return $this->googleService;
+    }
+
     public function handle()
     {
+        $this->ensureTenantDbLoaded();
+        $service = $this->getGoogleService();
+
         $pageToken = null;
-
         $syncToken = $this->synchronization->token;
-
-        $service = $this->synchronizable->getGoogleService('Calendar');
 
         do {
             $tokens = compact('pageToken', 'syncToken');
@@ -48,10 +70,8 @@ abstract class SynchronizeResource
                 if ($e->getCode() === 410) {
                     $this->synchronization->update(['token' => null]);
                     $this->dropAllSyncedItems();
-
                     return $this->handle();
                 }
-
                 throw $e;
             }
 
@@ -68,27 +88,7 @@ abstract class SynchronizeResource
         ]);
     }
 
-    /**
-     * Get the Google request.
-     *
-     * @param  mixed  $service
-     * @param  mixed  $options
-     * @return mixed
-     */
     abstract public function getGoogleRequest($service, $options);
-
-    /**
-     * Sync the item.
-     *
-     * @param  mixed  $item
-     * @return mixed
-     */
     abstract public function syncItem($item);
-
-    /**
-     * Drop all synced items.
-     *
-     * @return mixed
-     */
     abstract public function dropAllSyncedItems();
 }
