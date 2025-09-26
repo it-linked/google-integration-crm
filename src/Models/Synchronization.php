@@ -5,7 +5,6 @@ namespace Webkul\Google\Models;
 use Illuminate\Database\Eloquent\Model;
 use Ramsey\Uuid\Uuid;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Webkul\Google\Contracts\Synchronization as SynchronizationContract;
 
@@ -30,22 +29,34 @@ class Synchronization extends Model implements SynchronizationContract
 
     public function ping(): mixed
     {
-        return $this->synchronizable?->synchronize();
+        Log::info("PING called for synchronization {$this->id} on DB: " . DB::getDatabaseName());
+
+        if (! $this->synchronizable) {
+            Log::warning("No related synchronizable model for synchronization {$this->id}");
+            return null;
+        }
+
+        Log::info("Calling synchronize() on related model for {$this->id}");
+        return $this->synchronizable->synchronize();
     }
 
     public function startListeningForChanges(): mixed
     {
+        Log::info("startListeningForChanges called for {$this->id}");
         return $this->synchronizable?->watch();
     }
 
     public function stopListeningForChanges()
     {
+        Log::info("stopListeningForChanges called for {$this->id}");
         if (! $this->resource_id) return;
 
         try {
             $this->synchronizable
                 ->getGoogleService('Calendar')
                 ->channels->stop($this->asGoogleChannel());
+
+            Log::info("Successfully stopped listening for changes for {$this->id}");
         } catch (\Exception $e) {
             Log::error("StopListeningForChanges failed: {$e->getMessage()}", [
                 'synchronization_id' => $this->id
@@ -60,13 +71,13 @@ class Synchronization extends Model implements SynchronizationContract
 
     public function refreshWebhook(): self
     {
+        Log::info("refreshWebhook called for {$this->id}");
         $this->stopListeningForChanges();
 
         $this->id = Uuid::uuid4();
         $this->save();
 
         $this->startListeningForChanges();
-
         return $this;
     }
 
@@ -100,9 +111,11 @@ class Synchronization extends Model implements SynchronizationContract
         static::creating(function ($synchronization) {
             $synchronization->id = Uuid::uuid4();
             $synchronization->last_synchronized_at = now();
+            Log::info("Creating new synchronization {$synchronization->id}");
         });
 
         static::created(function ($synchronization) {
+            Log::info("Synchronization created hook fired for {$synchronization->id}");
             try {
                 $synchronization->startListeningForChanges();
                 $synchronization->ping();
@@ -114,6 +127,7 @@ class Synchronization extends Model implements SynchronizationContract
         });
 
         static::deleting(function ($synchronization) {
+            Log::info("Deleting synchronization {$synchronization->id}");
             $synchronization->stopListeningForChanges();
         });
     }

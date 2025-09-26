@@ -11,40 +11,49 @@ use Webkul\Master\Models\AdminUserTenant;
 
 class WebhookController extends Controller
 {
-    /**
-     * Handle the incoming request.
-     */
     public function __invoke(Request $request)
     {
-        // ── Tenant detection ──────────────────────────────────────────────
         $host = $request->getHost();
+        Log::info("Webhook received from host: {$host}", ['headers' => $request->headers->all()]);
+
         $tenant = AdminUserTenant::where('domain', $host)->first();
 
         if (!$tenant) {
+            Log::warning("Tenant not found for host: {$host}");
             return response()->json(['error' => 'Tenant not found'], 404);
         }
 
-        // Switch to tenant database
+        // Switch to tenant DB
         Config::set('database.connections.tenant.database', $tenant->tenant_db);
         DB::purge('tenant');
         DB::reconnect('tenant');
         Config::set('database.default', 'tenant');
 
-        Log::info('Switched to tenant DB', ['database' => $tenant->tenant_db]);
+        Log::info("Switched to tenant DB", ['database' => $tenant->tenant_db]);
 
-        // ── Google webhook processing ───────────────────────────────────
         if ($request->header('x-goog-resource-state') !== 'exists') {
+            Log::info("No changes detected for tenant: {$tenant->tenant_db}");
             return response()->json(['message' => 'No changes detected'], 200);
         }
 
         try {
-            $sync = Synchronization::query()
-                ->where('id', $request->header('x-goog-channel-id'))
-                ->where('resource_id', $request->header('x-goog-resource-id'))
+            $channelId = $request->header('x-goog-channel-id');
+            $resourceId = $request->header('x-goog-resource-id');
+
+            Log::info("Looking up Synchronization", [
+                'channel_id' => $channelId,
+                'resource_id' => $resourceId
+            ]);
+
+            $sync = Synchronization::on('tenant')
+                ->where('id', $channelId)
+                ->where('resource_id', $resourceId)
                 ->firstOrFail();
 
+            Log::info("Synchronization found: {$sync->id}");
             $sync->ping();
 
+            Log::info("Synchronization ping completed: {$sync->id}");
             return response()->json(['message' => 'Synchronization pinged successfully'], 200);
         } catch (\Exception $e) {
             Log::error('Failed to process Google webhook', [
