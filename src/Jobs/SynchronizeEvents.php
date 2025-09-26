@@ -19,11 +19,16 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
      */
     public function getGoogleRequest($service, $options)
     {
-        $service = $this->getGoogleService(); // lazy-loaded
+        $service = $this->getGoogleService();
 
-        // Expand recurring events
         $options['singleEvents'] = true;
-        $options['orderBy'] = 'startTime';
+        $options['orderBy']      = 'startTime';
+
+        // ✅ Use saved sync token if present
+        if ($this->synchronization->token) {
+            unset($options['timeMin'], $options['timeMax']); // Google forbids these when using syncToken
+            $options['syncToken'] = $this->synchronization->token;
+        }
 
         Log::info('SynchronizeEvents: starting request', [
             'account_id' => $this->synchronizable->id ?? null,
@@ -39,31 +44,43 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
     public function synchronize(): void
     {
         $service = $this->getGoogleService();
-
-        $googleEvents = $this->getGoogleRequest($service, [
+        $options = [
             'timeMin' => now()->subYears(1)->toAtomString(),
             'timeMax' => now()->addYears(2)->toAtomString(),
-        ]);
+        ];
 
-        $googleIds = collect($googleEvents->getItems())->pluck('id')->toArray();
+        $googleEvents = $this->getGoogleRequest($service, $options);
 
-        // Delete missing events
-        $deletedCount = $this->synchronizable->events()
-            ->whereNotIn('google_id', $googleIds)
-            ->delete();
+        do {
+            $googleIds = collect($googleEvents->getItems())->pluck('id')->toArray();
 
-        Log::info('SynchronizeEvents: deleted missing events from CRM', [
-            'deleted_count' => $deletedCount,
-            'account_id'    => $this->synchronizable->id,
-        ]);
+            // Delete missing events
+            $deletedCount = $this->synchronizable->events()
+                ->whereNotIn('google_id', $googleIds)
+                ->delete();
 
-        foreach ($googleEvents->getItems() as $googleEvent) {
-            $this->syncItem($googleEvent);
-        }
+            Log::info('SynchronizeEvents: deleted missing events', [
+                'deleted_count' => $deletedCount,
+                'account_id'    => $this->synchronizable->id,
+            ]);
 
-        Log::info('SynchronizeEvents: completed synchronization', [
-            'account_id' => $this->synchronizable->id,
-        ]);
+            foreach ($googleEvents->getItems() as $googleEvent) {
+                $this->syncItem($googleEvent);
+            }
+
+            // ✅ Paginate if more pages
+            $pageToken = $googleEvents->getNextPageToken();
+            if ($pageToken) {
+                $options['pageToken'] = $pageToken;
+                $googleEvents = $service->events->listEvents($this->synchronizable->google_id, $options);
+            } else {
+                // ✅ Save nextSyncToken for incremental sync
+                $this->synchronization->update([
+                    'token'           => $googleEvents->getNextSyncToken(),
+                    'last_synchronized_at' => now(),
+                ]);
+            }
+        } while ($pageToken);
     }
 
     /**

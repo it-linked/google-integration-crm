@@ -13,7 +13,7 @@ class Synchronization extends Model implements SynchronizationContract
      *
      * @var string
      */
-    protected $connection = 'tenant';
+    protected $connection = 'tenant'; 
     protected $table = 'google_synchronizations';
 
     /**
