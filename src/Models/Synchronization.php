@@ -4,31 +4,18 @@ namespace Webkul\Google\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Ramsey\Uuid\Uuid;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Log;
 use Webkul\Google\Contracts\Synchronization as SynchronizationContract;
 
 class Synchronization extends Model implements SynchronizationContract
 {
-    /**
-     * Define the table associated with the model.
-     *
-     * @var string
-     */
     protected $connection = 'tenant'; 
     protected $table = 'google_synchronizations';
-
-    /**
-     * Default incrementing value false.
-     *
-     * @var bool
-     */
     public $incrementing = false;
-    protected $keyType = 'string';   // ✅ Important
+    protected $keyType = 'string';
 
-    /**
-     * Define the fillable property.
-     *
-     * @var array
-     */
     protected $fillable = [
         'token',
         'last_synchronized_at',
@@ -36,67 +23,45 @@ class Synchronization extends Model implements SynchronizationContract
         'expired_at',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array
-     */
     protected $casts = [
         'last_synchronized_at' => 'datetime',
         'expired_at'           => 'datetime',
     ];
 
-    /**
-     * Get the synchronizable instance.
-     */
     public function ping(): mixed
     {
-        return $this->synchronizable->synchronize();
+        return $this->synchronizable?->synchronize();
     }
 
-    /**
-     * Start listening for changes.
-     */
     public function startListeningForChanges(): mixed
     {
-        return $this->synchronizable->watch();
+        return $this->synchronizable?->watch();
     }
 
-    /**
-     * Stop Listening for changes.
-     *
-     * @return void
-     */
     public function stopListeningForChanges()
     {
-        if (! $this->resource_id) {
-            return;
-        }
+        if (! $this->resource_id) return;
 
-        $this->synchronizable
-            ->getGoogleService('Calendar')
-            ->channels->stop($this->asGoogleChannel());
+        try {
+            $this->synchronizable
+                ->getGoogleService('Calendar')
+                ->channels->stop($this->asGoogleChannel());
+        } catch (\Exception $e) {
+            Log::error("StopListeningForChanges failed: {$e->getMessage()}", [
+                'synchronization_id' => $this->id
+            ]);
+        }
     }
 
-    /**
-     * Get the synchronizable instance.
-     *
-     * @return void
-     */
     public function synchronizable()
     {
         return $this->morphTo();
     }
 
-    /**
-     * Refresh webhook.
-     */
     public function refreshWebhook(): self
     {
         $this->stopListeningForChanges();
 
-        // Update the UUID since the previous one has
-        // already been associated to a Google Channel.
         $this->id = Uuid::uuid4();
         $this->save();
 
@@ -105,38 +70,47 @@ class Synchronization extends Model implements SynchronizationContract
         return $this;
     }
 
-    /**
-     * Get the Google Channel.
-     */
     public function asGoogleChannel(): mixed
     {
         return tap(new \Google_Service_Calendar_Channel, function ($channel) {
             $channel->setId($this->id);
             $channel->setResourceId($this->resource_id);
             $channel->setType('web_hook');
-            $channel->setAddress(config('services.google.webhook_uri'));
+            $channel->setAddress($this->getWebhookUri());
         });
     }
 
-    /**
-     * Boot the model.
-     *
-     * @return void
-     */
-    public static function boot()
+    protected function getWebhookUri(): string
+    {
+        try {
+            $googleApp = \Webkul\Google\Models\GoogleApp::first();
+            return $googleApp->webhook_uri ?? '';
+        } catch (\Exception $e) {
+            Log::error("getWebhookUri failed: {$e->getMessage()}", [
+                'synchronization_id' => $this->id
+            ]);
+            return '';
+        }
+    }
+
+    protected static function boot()
     {
         parent::boot();
 
         static::creating(function ($synchronization) {
             $synchronization->id = Uuid::uuid4();
-
             $synchronization->last_synchronized_at = now();
         });
 
         static::created(function ($synchronization) {
-            $synchronization->startListeningForChanges();
-
-            $synchronization->ping();
+            try {
+                $synchronization->startListeningForChanges();
+                $synchronization->ping();
+            } catch (\Exception $e) {
+                Log::error("Synchronization created hook failed: {$e->getMessage()}", [
+                    'synchronization_id' => $synchronization->id
+                ]);
+            }
         });
 
         static::deleting(function ($synchronization) {
