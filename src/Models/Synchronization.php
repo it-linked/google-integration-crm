@@ -22,6 +22,7 @@ class Synchronization extends Model implements SynchronizationContract
      * @var bool
      */
     public $incrementing = false;
+    protected $keyType = 'string';   // ✅ Important
 
     /**
      * Define the fillable property.

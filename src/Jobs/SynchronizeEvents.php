@@ -75,9 +75,11 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 $googleEvents = $service->events->listEvents($this->synchronizable->google_id, $options);
             } else {
                 // ✅ Save nextSyncToken for incremental sync
-                $this->synchronization->update([
-                    'token'           => $googleEvents->getNextSyncToken(),
-                    'last_synchronized_at' => now(),
+                $this->synchronization->token = $googleEvents->getNextSyncToken();
+                $this->synchronization->last_synchronized_at = now();
+                $this->synchronization->save();
+                Log::info('SynchronizeEvents: saved nextSyncToken', [
+                    'sync_token' => $this->synchronization->token,
                 ]);
             }
         } while ($pageToken);
