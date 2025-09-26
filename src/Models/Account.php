@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Webkul\Google\Concerns\Synchronizable;
 use Webkul\Google\Contracts\Account as AccountContract;
 use Webkul\Google\Jobs\SynchronizeCalendars;
+use Webkul\Google\Jobs\SynchronizeEvents;
 use Webkul\Google\Jobs\WatchCalendars;
 use Illuminate\Support\Facades\DB;
 
@@ -51,6 +52,8 @@ class Account extends Model implements AccountContract
     {
         $tenantDb = DB::connection($this->getConnectionName())->getDatabaseName();
         SynchronizeCalendars::dispatch($this, $tenantDb);
+        // Dispatch event sync
+        SynchronizeEvents::dispatch($this->account, $tenantDb);
     }
 
     public function watch()
