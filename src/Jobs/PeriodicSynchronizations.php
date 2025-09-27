@@ -21,44 +21,42 @@ class PeriodicSynchronizations implements ShouldQueue
 
     public function handle()
     {
-        Log::info("PeriodicSynchronizations job started");
+        $processedDatabases = [];
 
         $tenants = AdminUserTenant::all();
-        Log::info("Found " . $tenants->count() . " tenants");
 
         foreach ($tenants as $tenant) {
-            Log::info("Processing tenant", ['tenant_db' => $tenant->tenant_db, 'domain' => $tenant->domain]);
+
+            // Skip if this tenant DB was already processed
+            if (in_array($tenant->tenant_db, $processedDatabases)) {
+                continue;
+            }
 
             try {
+                // Switch to tenant database
                 Config::set('database.connections.tenant.database', $tenant->tenant_db);
                 DB::purge('tenant');
                 DB::reconnect('tenant');
                 Config::set('database.default', 'tenant');
 
-                Log::info("Switched to tenant database", ['database' => $tenant->tenant_db]);
+                // Mark this DB as processed
+                $processedDatabases[] = $tenant->tenant_db;
 
+                // Get synchronizations for this tenant
                 $synchronizations = Synchronization::on('tenant')
                     ->whereNotNull('resource_id')
                     ->get();
 
-                Log::info("Found " . $synchronizations->count() . " synchronizations to ping", [
-                    'tenant_db' => $tenant->tenant_db
-                ]);
-
                 foreach ($synchronizations as $sync) {
-                    Log::info("Pinging synchronization {$sync->id}");
                     $sync->ping();
-                    Log::info("Ping completed for synchronization {$sync->id}");
                 }
 
+                Log::info("Successfully synced tenant database: {$tenant->tenant_db}");
             } catch (\Exception $e) {
-                Log::error("Error processing tenant {$tenant->tenant_db}: {$e->getMessage()}", [
-                    'tenant_db' => $tenant->tenant_db,
+                Log::error("Error syncing tenant database {$tenant->tenant_db}: {$e->getMessage()}", [
                     'trace' => $e->getTraceAsString()
                 ]);
             }
         }
-
-        Log::info("PeriodicSynchronizations job completed");
     }
 }

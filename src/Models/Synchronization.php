@@ -29,26 +29,38 @@ class Synchronization extends Model implements SynchronizationContract
 
     public function ping(): mixed
     {
-        Log::info("PING called for synchronization {$this->id} on DB: " . DB::getDatabaseName());
+        try {
+            if (! $this->synchronizable) {
+                Log::error("Ping failed: No related synchronizable model for synchronization {$this->id}");
+                return null;
+            }
 
-        if (! $this->synchronizable) {
-            Log::warning("No related synchronizable model for synchronization {$this->id}");
+            $this->synchronizable->synchronize();
+            Log::info("Successfully pinged synchronization {$this->id}");
+            return true;
+
+        } catch (\Exception $e) {
+            Log::error("Ping failed for synchronization {$this->id}: {$e->getMessage()}", [
+                'trace' => $e->getTraceAsString()
+            ]);
             return null;
         }
-
-        Log::info("Calling synchronize() on related model for {$this->id}");
-        return $this->synchronizable->synchronize();
     }
 
     public function startListeningForChanges(): mixed
     {
-        Log::info("startListeningForChanges called for {$this->id}");
-        return $this->synchronizable?->watch();
+        try {
+            $this->synchronizable?->watch();
+            Log::info("Started listening for changes for synchronization {$this->id}");
+            return true;
+        } catch (\Exception $e) {
+            Log::error("startListeningForChanges failed for synchronization {$this->id}: {$e->getMessage()}");
+            return null;
+        }
     }
 
     public function stopListeningForChanges()
     {
-        Log::info("stopListeningForChanges called for {$this->id}");
         if (! $this->resource_id) return;
 
         try {
@@ -56,11 +68,9 @@ class Synchronization extends Model implements SynchronizationContract
                 ->getGoogleService('Calendar')
                 ->channels->stop($this->asGoogleChannel());
 
-            Log::info("Successfully stopped listening for changes for {$this->id}");
+            Log::info("Successfully stopped listening for changes for synchronization {$this->id}");
         } catch (\Exception $e) {
-            Log::error("StopListeningForChanges failed: {$e->getMessage()}", [
-                'synchronization_id' => $this->id
-            ]);
+            Log::error("stopListeningForChanges failed for synchronization {$this->id}: {$e->getMessage()}");
         }
     }
 
@@ -71,13 +81,18 @@ class Synchronization extends Model implements SynchronizationContract
 
     public function refreshWebhook(): self
     {
-        Log::info("refreshWebhook called for {$this->id}");
-        $this->stopListeningForChanges();
+        try {
+            $this->stopListeningForChanges();
 
-        $this->id = Uuid::uuid4();
-        $this->save();
+            $this->id = Uuid::uuid4();
+            $this->save();
 
-        $this->startListeningForChanges();
+            $this->startListeningForChanges();
+            Log::info("Successfully refreshed webhook for synchronization {$this->id}");
+        } catch (\Exception $e) {
+            Log::error("refreshWebhook failed for synchronization {$this->id}: {$e->getMessage()}");
+        }
+
         return $this;
     }
 
@@ -97,9 +112,7 @@ class Synchronization extends Model implements SynchronizationContract
             $googleApp = \Webkul\Google\Models\GoogleApp::first();
             return $googleApp->webhook_uri ?? '';
         } catch (\Exception $e) {
-            Log::error("getWebhookUri failed: {$e->getMessage()}", [
-                'synchronization_id' => $this->id
-            ]);
+            Log::error("getWebhookUri failed for synchronization {$this->id}: {$e->getMessage()}");
             return '';
         }
     }
@@ -111,24 +124,23 @@ class Synchronization extends Model implements SynchronizationContract
         static::creating(function ($synchronization) {
             $synchronization->id = Uuid::uuid4();
             $synchronization->last_synchronized_at = now();
-            Log::info("Creating new synchronization {$synchronization->id}");
         });
 
         static::created(function ($synchronization) {
-            Log::info("Synchronization created hook fired for {$synchronization->id}");
             try {
                 $synchronization->startListeningForChanges();
                 $synchronization->ping();
             } catch (\Exception $e) {
-                Log::error("Synchronization created hook failed: {$e->getMessage()}", [
-                    'synchronization_id' => $synchronization->id
-                ]);
+                Log::error("Synchronization created hook failed for {$synchronization->id}: {$e->getMessage()}");
             }
         });
 
         static::deleting(function ($synchronization) {
-            Log::info("Deleting synchronization {$synchronization->id}");
-            $synchronization->stopListeningForChanges();
+            try {
+                $synchronization->stopListeningForChanges();
+            } catch (\Exception $e) {
+                Log::error("Deleting synchronization failed for {$synchronization->id}: {$e->getMessage()}");
+            }
         });
     }
 }
