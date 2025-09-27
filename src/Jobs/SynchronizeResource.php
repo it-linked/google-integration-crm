@@ -32,11 +32,6 @@ abstract class SynchronizeResource
             DB::purge('tenant');
             DB::reconnect('tenant');
             Config::set('database.default', 'tenant');
-
-            Log::info('Tenant DB switched', [
-                'tenant_db' => $this->tenantDb,
-                'account_id' => $this->synchronizable->id ?? null,
-            ]);
         }
 
         $this->tenantDbLoaded = true;
@@ -60,10 +55,6 @@ abstract class SynchronizeResource
 
             $this->googleService = new \Google_Service_Calendar($client);
 
-            Log::info('Google service initialized', [
-                'account_id' => $this->synchronizable->id ?? null,
-                'tenant_db'  => $this->tenantDb,
-            ]);
         } catch (\Exception $e) {
             Log::error("Failed to initialize Google service: {$e->getMessage()}", [
                 'account_id' => $this->synchronizable->id ?? null,
@@ -102,10 +93,6 @@ abstract class SynchronizeResource
             $allItems = $this->getGoogleRequest($service, $options);
 
             if (empty($allItems)) {
-                Log::info('No items returned from Google, skipping synchronization', [
-                    'account_id' => $this->synchronizable->id ?? null,
-                    'tenant_db' => $this->tenantDb,
-                ]);
                 return;
             }
 
@@ -121,19 +108,9 @@ abstract class SynchronizeResource
                         'token' => $nextToken,
                         'last_synchronized_at' => now(),
                     ]);
-
-                    Log::info('Next sync token updated', [
-                        'account_id' => $this->synchronizable->id ?? null,
-                        'tenant_db'  => $this->tenantDb,
-                        'next_sync_token' => $nextToken,
-                    ]);
                 }
             }
 
-            Log::info('Synchronization completed', [
-                'account_id' => $this->synchronizable->id ?? null,
-                'tenant_db'  => $this->tenantDb,
-            ]);
         } catch (\Exception $e) {
             Log::error('SynchronizeResource job failed', [
                 'error'      => $e->getMessage(),

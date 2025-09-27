@@ -38,11 +38,6 @@ abstract class WatchResource
         DB::reconnect('tenant');
         Config::set('database.default', 'tenant');
 
-        Log::info('Tenant DB switched for WatchResource', [
-            'tenant_db' => $this->tenantDb,
-            'account_id'=> $this->synchronizable->id ?? null,
-        ]);
-
         $this->tenantDbLoaded = true;
     }
 
@@ -83,11 +78,6 @@ abstract class WatchResource
         if ($this->googleService) return $this->googleService;
 
         $this->ensureTenantDbLoaded();
-
-        Log::info('Creating Google service instance: Google_Service_Calendar', [
-            'account_id'=> $this->synchronizable->id ?? null,
-            'tenant_db' => $this->tenantDb,
-        ]);
 
         $this->googleService = $this->synchronizable->getGoogleService('Calendar');
 
