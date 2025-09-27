@@ -29,13 +29,6 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
         $calendarId = $this->synchronizable->calendars->firstWhere('is_primary', 1)?->google_id
             ?? $this->synchronizable->google_id;
 
-        Log::info('SynchronizeEvents: fetching events', [
-            'account_id' => $this->synchronizable->id ?? null,
-            'tenant_db' => $this->tenantDb,
-            'sync_token' => $this->synchronization->token ?? null,
-            'calendar_id' => $calendarId,
-        ]);
-
         $allEvents = [];
         $pageToken = $options['pageToken'] ?? null;
 
@@ -52,22 +45,23 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 $allEvents = array_merge($allEvents, $response->getItems());
                 $pageToken = $response->getNextPageToken();
 
-                $this->lastResponse = $response; // store last response
+                $this->lastResponse = $response;
             } while ($pageToken);
         } catch (Google_Service_Exception $e) {
-            if ($e->getCode() === 410) { // invalid sync token
-                Log::warning('Sync token invalid, resetting token for full sync', [
+            // Handle invalid sync token
+            if ($e->getCode() === 410) {
+                Log::warning("Sync token invalid, resetting token for full sync", [
                     'account_id' => $this->synchronizable->id,
                     'tenant_db' => $this->tenantDb,
                 ]);
-
                 $this->synchronization->update(['token' => null]);
                 unset($options['syncToken']);
                 return $this->getGoogleRequest($service, $options);
             }
 
+            // Calendar not found
             if ($e->getCode() === 404) {
-                Log::warning('Google calendar not found, disabling synchronization', [
+                Log::warning("Google calendar not found, disabling sync", [
                     'calendar_id' => $calendarId,
                     'account_id' => $this->synchronizable->id,
                     'tenant_db' => $this->tenantDb,
@@ -76,8 +70,9 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 return [];
             }
 
+            // Token expired
             if ($e->getCode() === 401) {
-                Log::warning('Google access token invalid or expired', [
+                Log::warning("Google access token invalid or expired", [
                     'account_id' => $this->synchronizable->id,
                     'tenant_db' => $this->tenantDb,
                 ]);
@@ -95,53 +90,43 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
         $start = Carbon::parse($googleEvent->start->dateTime ?? $googleEvent->start->date);
         $end   = Carbon::parse($googleEvent->end->dateTime ?? $googleEvent->end->date);
 
-        if ($googleEvent->status === 'cancelled') {
-            foreach ($this->synchronizable->calendars as $calendar) {
-                $calendar->events()->where('google_id', $googleEvent->id)->delete();
-            }
-            return;
+        if ($googleEvent->status === 'cancelled' || $start->isPast()) {
+            return; // Skip cancelled or past events
         }
 
-        if ($start->isPast()) return;
+        // Only sync to primary calendar
+        $calendar = $this->synchronizable->calendars->firstWhere('is_primary', 1);
+        if (! $calendar) return;
 
-        foreach ($this->synchronizable->calendars as $calendar) {
-            $event = $calendar->events()->updateOrCreate(
-                ['google_id' => $googleEvent->id],
-                [] // Update fields if needed
-            );
+        $event = $calendar->events()->updateOrCreate(
+            ['google_id' => $googleEvent->id],
+            [] // update fields if needed
+        );
 
-            $activity = $event->activity()->updateOrCreate(
-                ['id' => $event->activity_id],
-                [
-                    'title' => $googleEvent->summary,
-                    'comment' => $googleEvent->description ?? '',
-                    'schedule_from' => $start,
-                    'schedule_to' => $end,
-                    'user_id' => $this->synchronizable->user->id,
-                    'type' => 'meeting',
-                ]
-            );
+        $activity = $event->activity()->updateOrCreate(
+            ['id' => $event->activity_id],
+            [
+                'title' => $googleEvent->summary,
+                'comment' => $googleEvent->description ?? '',
+                'schedule_from' => $start,
+                'schedule_to' => $end,
+                'user_id' => $this->synchronizable->user->id,
+                'type' => 'meeting',
+            ]
+        );
 
-            $event->update(['activity_id' => $activity->id]);
-
-            Log::info('SynchronizeEvents: event synced', [
-                'event_id' => $event->id,
-                'google_id' => $googleEvent->id,
-                'calendar_id' => $calendar->id,
-                'tenant_db' => $this->tenantDb,
-            ]);
-        }
+        $event->update(['activity_id' => $activity->id]);
     }
 
     public function dropAllSyncedItems()
     {
-        foreach ($this->synchronizable->calendars as $calendar) {
+        $calendar = $this->synchronizable->calendars->firstWhere('is_primary', 1);
+        if ($calendar) {
             $calendar->events()->delete();
         }
 
-        Log::warning('SynchronizeEvents: dropped all events', [
+        Log::warning("Dropped all events for tenant {$this->tenantDb}", [
             'account_id' => $this->synchronizable->id ?? null,
-            'tenant_db'  => $this->tenantDb,
         ]);
     }
 }
