@@ -41,11 +41,10 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 }
 
                 $response = $service->events->listEvents($calendarId, $options);
-
                 $allEvents = array_merge($allEvents, $response->getItems());
                 $pageToken = $response->getNextPageToken();
-
                 $this->lastResponse = $response;
+
             } while ($pageToken);
         } catch (Google_Service_Exception $e) {
             // Handle invalid sync token
@@ -91,12 +90,11 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
         $end   = Carbon::parse($googleEvent->end->dateTime ?? $googleEvent->end->date);
 
         if ($googleEvent->status === 'cancelled' || $start->isPast()) {
-            return; // Skip cancelled or past events
+            return;
         }
 
-        // Only sync to primary calendar
         $calendar = $this->synchronizable->calendars->firstWhere('is_primary', 1);
-        if (! $calendar) return;
+        if (!$calendar) return;
 
         $event = $calendar->events()->updateOrCreate(
             ['google_id' => $googleEvent->id],

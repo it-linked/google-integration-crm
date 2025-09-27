@@ -61,7 +61,8 @@ class PeriodicSynchronizations implements ShouldQueue
                     $pingedSynchronizations[$tenant->tenant_db][] = $sync->id;
                 }
 
-                Log::info("Successfully synced tenant database: {$tenant->tenant_db}");
+                // Removed success logs to reduce log size
+
             } catch (\Exception $e) {
                 Log::error("Error syncing tenant database {$tenant->tenant_db}: {$e->getMessage()}", [
                     'trace' => $e->getTraceAsString()

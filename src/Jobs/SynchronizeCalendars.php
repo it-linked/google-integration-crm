@@ -28,7 +28,6 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
                 }
 
                 $response = $service->calendarList->listCalendarList($options);
-
                 $allCalendars = array_merge($allCalendars, $response->getItems());
                 $pageToken = $response->getNextPageToken();
             } while ($pageToken);
@@ -47,24 +46,15 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
 
     public function syncItem($googleCalendar)
     {
-        $calendar = $this->synchronizable->calendars()->updateOrCreate(
+        return $this->synchronizable->calendars()->updateOrCreate(
             ['google_id' => $googleCalendar->id],
             [
-                'name'     => $googleCalendar->summary,
-                'color'    => $googleCalendar->backgroundColor ?? '#9fe1e7',
-                'timezone' => $googleCalendar->timeZone ?? 'UTC',
-                'is_primary' => $googleCalendar->primary ?? false,
+                'name'      => $googleCalendar->summary,
+                'color'     => $googleCalendar->backgroundColor ?? '#9fe1e7',
+                'timezone'  => $googleCalendar->timeZone ?? 'UTC',
+                'is_primary'=> $googleCalendar->primary ?? false,
             ]
         );
-
-        Log::info('SynchronizeCalendars: calendar synced', [
-            'calendar_id' => $calendar->id,
-            'google_id' => $googleCalendar->id,
-            'account_id' => $this->synchronizable->id,
-            'tenant_db' => $this->tenantDb,
-        ]);
-
-        return $calendar;
     }
 
     public function dropAllSyncedItems()
