@@ -22,33 +22,43 @@ class PeriodicSynchronizations implements ShouldQueue
     public function handle()
     {
         $processedDatabases = [];
+        $pingedSynchronizations = []; // Track pinged syncs per DB
 
         $tenants = AdminUserTenant::all();
 
         foreach ($tenants as $tenant) {
 
-            // Skip if this tenant DB was already processed
-            if (in_array($tenant->tenant_db, $processedDatabases)) {
-                continue;
+            // Switch to tenant DB if not already done
+            if (!in_array($tenant->tenant_db, $processedDatabases)) {
+                try {
+                    Config::set('database.connections.tenant.database', $tenant->tenant_db);
+                    DB::purge('tenant');
+                    DB::reconnect('tenant');
+                    Config::set('database.default', 'tenant');
+
+                    $processedDatabases[] = $tenant->tenant_db;
+                    $pingedSynchronizations[$tenant->tenant_db] = [];
+                } catch (\Exception $e) {
+                    Log::error("Error switching to tenant DB {$tenant->tenant_db}: {$e->getMessage()}", [
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    continue;
+                }
             }
 
             try {
-                // Switch to tenant database
-                Config::set('database.connections.tenant.database', $tenant->tenant_db);
-                DB::purge('tenant');
-                DB::reconnect('tenant');
-                Config::set('database.default', 'tenant');
-
-                // Mark this DB as processed
-                $processedDatabases[] = $tenant->tenant_db;
-
-                // Get synchronizations for this tenant
                 $synchronizations = Synchronization::on('tenant')
                     ->whereNotNull('resource_id')
                     ->get();
 
                 foreach ($synchronizations as $sync) {
+                    // Skip if this synchronization was already pinged for this DB
+                    if (in_array($sync->id, $pingedSynchronizations[$tenant->tenant_db])) {
+                        continue;
+                    }
+
                     $sync->ping();
+                    $pingedSynchronizations[$tenant->tenant_db][] = $sync->id;
                 }
 
                 Log::info("Successfully synced tenant database: {$tenant->tenant_db}");

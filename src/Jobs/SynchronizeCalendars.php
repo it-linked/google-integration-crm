@@ -42,12 +42,6 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
             return [];
         }
 
-        Log::info('SynchronizeCalendars: total calendars fetched', [
-            'account_id' => $this->synchronizable->id,
-            'tenant_db' => $this->tenantDb,
-            'count' => count($allCalendars),
-        ]);
-
         return $allCalendars;
     }
 
