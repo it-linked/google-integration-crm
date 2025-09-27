@@ -36,7 +36,6 @@ class Synchronization extends Model implements SynchronizationContract
             }
 
             $this->synchronizable->synchronize();
-            Log::info("Successfully pinged synchronization {$this->id}");
             return true;
 
         } catch (\Exception $e) {
@@ -51,7 +50,6 @@ class Synchronization extends Model implements SynchronizationContract
     {
         try {
             $this->synchronizable?->watch();
-            Log::info("Started listening for changes for synchronization {$this->id}");
             return true;
         } catch (\Exception $e) {
             Log::error("startListeningForChanges failed for synchronization {$this->id}: {$e->getMessage()}");
@@ -67,8 +65,6 @@ class Synchronization extends Model implements SynchronizationContract
             $this->synchronizable
                 ->getGoogleService('Calendar')
                 ->channels->stop($this->asGoogleChannel());
-
-            Log::info("Successfully stopped listening for changes for synchronization {$this->id}");
         } catch (\Exception $e) {
             Log::error("stopListeningForChanges failed for synchronization {$this->id}: {$e->getMessage()}");
         }
@@ -88,7 +84,6 @@ class Synchronization extends Model implements SynchronizationContract
             $this->save();
 
             $this->startListeningForChanges();
-            Log::info("Successfully refreshed webhook for synchronization {$this->id}");
         } catch (\Exception $e) {
             Log::error("refreshWebhook failed for synchronization {$this->id}: {$e->getMessage()}");
         }
