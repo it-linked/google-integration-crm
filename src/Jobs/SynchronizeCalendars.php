@@ -32,20 +32,12 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
                 $pageToken = $response->getNextPageToken();
             } while ($pageToken);
         } catch (Google_Service_Exception $e) {
-            if (in_array($e->getCode(), [401, 403])) {
-                Log::warning("Google token revoked or expired - reauth required", [
-                    'account_id' => $this->synchronizable->id,
-                    'tenant_db' => $this->tenantDb,
-                ]);
-                $this->synchronizable->update(['active' => false]);
-                return [];
-            }
-
             Log::error('SynchronizeCalendars: Google API error', [
                 'account_id' => $this->synchronizable->id,
                 'tenant_db' => $this->tenantDb,
                 'error' => $e->getMessage(),
             ]);
+
             return [];
         }
 
@@ -60,7 +52,7 @@ class SynchronizeCalendars extends SynchronizeResource implements ShouldQueue
                 'name'      => $googleCalendar->summary,
                 'color'     => $googleCalendar->backgroundColor ?? '#9fe1e7',
                 'timezone'  => $googleCalendar->timeZone ?? 'UTC',
-                'is_primary' => $googleCalendar->primary ?? false,
+                'is_primary'=> $googleCalendar->primary ?? false,
             ]
         );
     }

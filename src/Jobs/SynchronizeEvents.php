@@ -46,17 +46,8 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 $this->lastResponse = $response;
             } while ($pageToken);
         } catch (Google_Service_Exception $e) {
-            if (in_array($e->getCode(), [401, 403])) {
-                // Token expired or revoked
-                Log::warning("Google token revoked/expired - reauth required", [
-                    'account_id' => $this->synchronizable->id,
-                    'tenant_db' => $this->tenantDb,
-                ]);
-                $this->synchronizable->update(['active' => false]);
-                return [];
-            }
-
-            if ($e->getCode() === 410) { // invalid sync token
+            // Handle invalid sync token
+            if ($e->getCode() === 410) {
                 Log::warning("Sync token invalid, resetting token for full sync", [
                     'account_id' => $this->synchronizable->id,
                     'tenant_db' => $this->tenantDb,
@@ -66,6 +57,7 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 return $this->getGoogleRequest($service, $options);
             }
 
+            // Calendar not found
             if ($e->getCode() === 404) {
                 Log::warning("Google calendar not found, disabling sync", [
                     'calendar_id' => $calendarId,
@@ -73,6 +65,15 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                     'tenant_db' => $this->tenantDb,
                 ]);
                 $this->synchronization->update(['active' => false]);
+                return [];
+            }
+
+            // Token expired
+            if ($e->getCode() === 401) {
+                Log::warning("Google access token invalid or expired", [
+                    'account_id' => $this->synchronizable->id,
+                    'tenant_db' => $this->tenantDb,
+                ]);
                 return [];
             }
 
