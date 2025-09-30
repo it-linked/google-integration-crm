@@ -104,7 +104,9 @@ class Synchronization extends Model implements SynchronizationContract
     protected function getWebhookUri(): string
     {
         try {
+            Log::info("getWebhookUri method called");
             $googleApp = \Webkul\Google\Models\GoogleApp::first();
+            Log::info("getWebhookUri {$googleApp}");
             return $googleApp->webhook_uri ?? '';
         } catch (\Exception $e) {
             Log::error("getWebhookUri failed for synchronization {$this->id}: {$e->getMessage()}");
