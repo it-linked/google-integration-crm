@@ -60,7 +60,6 @@ abstract class WatchResource
                 'resource_id' => $response->getResourceId(),
                 'expired_at'  => Carbon::createFromTimestampMs($response->getExpiration()),
             ]);
-
         } catch (\Google_Service_Exception $e) {
             Log::warning('WatchResource: Google push notification failed', [
                 'error' => $e->getMessage(),
@@ -79,12 +78,24 @@ abstract class WatchResource
 
         $this->ensureTenantDbLoaded();
 
-        $this->googleService = $this->synchronizable->getGoogleService('Calendar');
+        try {
+            $google = app(\Webkul\Google\Services\Google::class);
+            $google->connectWithSynchronizable($this->synchronizable);
+            $this->googleService = $google->service('Calendar');
 
-        Log::info('Google service initialized', [
-            'account_id'=> $this->synchronizable->id ?? null,
-            'tenant_db' => $this->tenantDb,
-        ]);
+            Log::debug('Google service initialized', [
+                'account_id' => $this->synchronizable->id ?? null,
+                'tenant_db' => $this->tenantDb,
+            ]);
+        } catch (\RuntimeException $e) {
+            Log::warning('Failed to initialize Google service', [
+                'account_id' => $this->synchronizable->id ?? null,
+                'tenant_db' => $this->tenantDb,
+                'error' => $e->getMessage(),
+            ]);
+            $this->synchronizable->update(['active' => false]);
+            throw $e;
+        }
 
         return $this->googleService;
     }
@@ -94,4 +105,3 @@ abstract class WatchResource
      */
     abstract public function getGoogleRequest($service, $channel);
 }
-

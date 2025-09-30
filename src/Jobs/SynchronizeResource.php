@@ -46,34 +46,13 @@ abstract class SynchronizeResource
         $this->ensureTenantDbLoaded();
 
         try {
-            $googleApp = \Webkul\Google\Models\GoogleApp::first();
+            // Use service class instead of raw client
+            $google = app(\Webkul\Google\Services\Google::class);
 
-            $client = new Google_Client();
-            $client->setClientId($googleApp->client_id);
-            $client->setClientSecret($googleApp->client_secret);
-            $client->setRedirectUri($googleApp->redirect_uri);
-            $client->setScopes($googleApp->scopes);
-            $client->setAccessType('offline');
-            $client->setPrompt('consent');
+            // Let it connect with refresh logic
+            $google->connectWithSynchronizable($this->synchronizable);
 
-            // Set token from DB
-            if ($this->synchronizable->token) {
-                $client->setAccessToken($this->synchronizable->token);
-
-                // Refresh if expired
-                if ($client->isAccessTokenExpired() && $client->getRefreshToken()) {
-                    $newToken = $client->fetchAccessTokenWithRefreshToken($client->getRefreshToken());
-
-                    if (!isset($newToken['error'])) {
-                        $this->synchronizable->update([
-                            'token' => $client->getAccessToken(),
-                        ]);
-                    }
-                }
-            }
-
-            $this->googleService = new \Google_Service_Calendar($client);
-
+            $this->googleService = $google->service('Calendar');
         } catch (\Exception $e) {
             Log::error("Failed to initialize Google service: {$e->getMessage()}", [
                 'account_id' => $this->synchronizable->id ?? null,
@@ -129,7 +108,6 @@ abstract class SynchronizeResource
                     ]);
                 }
             }
-
         } catch (Google_Service_Exception $e) {
             $decoded = json_decode($e->getMessage(), true);
 
