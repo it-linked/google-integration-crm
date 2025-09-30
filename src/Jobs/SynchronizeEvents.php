@@ -44,7 +44,6 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
                 $allEvents = array_merge($allEvents, $response->getItems());
                 $pageToken = $response->getNextPageToken();
                 $this->lastResponse = $response;
-
             } while ($pageToken);
         } catch (Google_Service_Exception $e) {
             // Handle invalid sync token
@@ -89,27 +88,51 @@ class SynchronizeEvents extends SynchronizeResource implements ShouldQueue
         $start = Carbon::parse($googleEvent->start->dateTime ?? $googleEvent->start->date);
         $end   = Carbon::parse($googleEvent->end->dateTime ?? $googleEvent->end->date);
 
-        if ($googleEvent->status === 'cancelled' || $start->isPast()) {
-            return;
-        }
-
         $calendar = $this->synchronizable->calendars->firstWhere('is_primary', 1);
         if (!$calendar) return;
 
+        // ✅ If event is deleted in Google Calendar
+        if ($googleEvent->status === 'cancelled') {
+            $event = $calendar->events()->where('google_id', $googleEvent->id)->first();
+
+            if ($event) {
+                // Delete linked activity first
+                if ($event->activity) {
+                    $event->activity->delete();
+                }
+
+                // Then delete the event record
+                $event->delete();
+
+                Log::info("Google event deleted -> local activity & event removed", [
+                    'google_id' => $googleEvent->id,
+                    'tenant_db' => $this->tenantDb,
+                ]);
+            }
+
+            return; // stop further processing
+        }
+
+        // Skip past events (optional, keep if you don’t want to sync past events)
+        if ($start->isPast()) {
+            return;
+        }
+
+        // ✅ Create or update event & activity
         $event = $calendar->events()->updateOrCreate(
             ['google_id' => $googleEvent->id],
-            [] // update fields if needed
+            [] // you can update fields here if needed
         );
 
         $activity = $event->activity()->updateOrCreate(
             ['id' => $event->activity_id],
             [
-                'title' => $googleEvent->summary,
-                'comment' => $googleEvent->description ?? '',
+                'title'        => $googleEvent->summary,
+                'comment'      => $googleEvent->description ?? '',
                 'schedule_from' => $start,
-                'schedule_to' => $end,
-                'user_id' => $this->synchronizable->user->id,
-                'type' => 'meeting',
+                'schedule_to'  => $end,
+                'user_id'      => $this->synchronizable->user->id,
+                'type'         => 'meeting',
             ]
         );
 
