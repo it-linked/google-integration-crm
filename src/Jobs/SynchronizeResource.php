@@ -5,6 +5,8 @@ namespace Webkul\Google\Jobs;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Google_Service_Exception;
+use Google_Client;
 
 abstract class SynchronizeResource
 {
@@ -46,12 +48,29 @@ abstract class SynchronizeResource
         try {
             $googleApp = \Webkul\Google\Models\GoogleApp::first();
 
-            $client = new \Google_Client();
+            $client = new Google_Client();
             $client->setClientId($googleApp->client_id);
             $client->setClientSecret($googleApp->client_secret);
             $client->setRedirectUri($googleApp->redirect_uri);
             $client->setScopes($googleApp->scopes);
-            $client->setAccessToken($this->synchronizable->token ?? null);
+            $client->setAccessType('offline');
+            $client->setPrompt('consent');
+
+            // Set token from DB
+            if ($this->synchronizable->token) {
+                $client->setAccessToken($this->synchronizable->token);
+
+                // Refresh if expired
+                if ($client->isAccessTokenExpired() && $client->getRefreshToken()) {
+                    $newToken = $client->fetchAccessTokenWithRefreshToken($client->getRefreshToken());
+
+                    if (!isset($newToken['error'])) {
+                        $this->synchronizable->update([
+                            'token' => $client->getAccessToken(),
+                        ]);
+                    }
+                }
+            }
 
             $this->googleService = new \Google_Service_Calendar($client);
 
@@ -111,6 +130,29 @@ abstract class SynchronizeResource
                 }
             }
 
+        } catch (Google_Service_Exception $e) {
+            $decoded = json_decode($e->getMessage(), true);
+
+            if (isset($decoded['error']) && $decoded['error'] === 'invalid_grant') {
+                // Token revoked/expired permanently
+                Log::warning("Google token revoked or expired - reauth required", [
+                    'account_id' => $this->synchronizable->id ?? null,
+                    'tenant_db'  => $this->tenantDb,
+                ]);
+
+                // Mark account as requiring reauth
+                if (method_exists($this->synchronizable, 'update')) {
+                    $this->synchronizable->update(['requires_reauth' => 1]);
+                }
+
+                return; // don’t retry
+            }
+
+            Log::error('SynchronizeResource API error', [
+                'error'      => $e->getMessage(),
+                'account_id' => $this->synchronizable->id ?? null,
+                'tenant_db'  => $this->tenantDb,
+            ]);
         } catch (\Exception $e) {
             Log::error('SynchronizeResource job failed', [
                 'error'      => $e->getMessage(),
@@ -125,4 +167,3 @@ abstract class SynchronizeResource
     abstract public function syncItem($item);
     abstract public function dropAllSyncedItems();
 }
-
