@@ -24,7 +24,7 @@ class PeriodicSynchronizations implements ShouldQueue
         $processedDatabases = [];
         $pingedSynchronizations = []; // Track pinged syncs per DB
 
-        $tenants = AdminUserTenant::all();
+        $tenants = AdminUserTenant::on('mysql')->get();
 
         foreach ($tenants as $tenant) {
 
@@ -34,7 +34,6 @@ class PeriodicSynchronizations implements ShouldQueue
                     Config::set('database.connections.tenant.database', $tenant->tenant_db);
                     DB::purge('tenant');
                     DB::reconnect('tenant');
-                    Config::set('database.default', 'tenant');
 
                     $processedDatabases[] = $tenant->tenant_db;
                     $pingedSynchronizations[$tenant->tenant_db] = [];

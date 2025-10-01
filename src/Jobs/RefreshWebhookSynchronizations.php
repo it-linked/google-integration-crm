@@ -19,14 +19,13 @@ class RefreshWebhookSynchronizations implements ShouldQueue
 
     public function handle()
     {
-        $tenants = AdminUserTenant::all();
+        $tenants = AdminUserTenant::on('mysql')->get();
 
         foreach ($tenants as $tenant) {
             try {
                 Config::set('database.connections.tenant.database', $tenant->tenant_db);
                 DB::purge('tenant');
                 DB::reconnect('tenant');
-                Config::set('database.default', 'tenant');
 
                 Log::info("Running RefreshWebhookSynchronizations for DB: {$tenant->tenant_db}");
 

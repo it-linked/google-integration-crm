@@ -36,7 +36,6 @@ abstract class WatchResource
         Config::set('database.connections.tenant.database', $this->tenantDb);
         DB::purge('tenant');
         DB::reconnect('tenant');
-        Config::set('database.default', 'tenant');
 
         $this->tenantDbLoaded = true;
     }
