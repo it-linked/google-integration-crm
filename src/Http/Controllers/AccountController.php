@@ -57,7 +57,7 @@ class AccountController extends Controller
 
             $userInfo = $this->google->service('Oauth2')->userinfo->get();
 
-            $account = $this->userRepository->find(auth()->user()->id)->accounts()->updateOrCreate(
+            $account = $this->userRepository->find(auth()->guard('user')->id())->accounts()->updateOrCreate(
                 ['google_id' => $userInfo->id],
                 [
                     'name'   => $userInfo->email,
