@@ -21,9 +21,9 @@ class AccountController extends Controller
 
     public function index(): View|RedirectResponse
     {
-        $account = $this->accountRepository->findOneByField('user_id', auth()->user()->id);
+        $account = $this->accountRepository->findOneByField('user_id', auth()->guard('user')->id());
         Log::info('AccountController@index loaded', [
-            'user_id' => auth()->user()->id,
+            'user_id' => auth()->guard('user')->id(),
             'account_exists' => $account ? true : false
         ]);
 
@@ -36,7 +36,7 @@ class AccountController extends Controller
 
     public function store(): RedirectResponse
     {
-        $account = $this->accountRepository->findOneByField('user_id', auth()->user()->id);
+        $account = $this->accountRepository->findOneByField('user_id', auth()->guard('user')->id());
 
         if ($account) {
             $this->accountRepository->update([
