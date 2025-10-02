@@ -16,7 +16,7 @@ abstract class SynchronizeResource
     protected bool $tenantDbLoaded = false;
 
     protected ?\Google_Service_Calendar $googleService = null;
-    protected $lastResponse = null; // Store last Google response
+    protected $lastResponse = null;
 
     public function __construct($synchronizable, ?string $tenantDb = null)
     {
@@ -59,7 +59,6 @@ abstract class SynchronizeResource
             if ($this->synchronizable->token) {
                 $client->setAccessToken($this->synchronizable->token);
 
-                // Refresh if expired
                 if ($client->isAccessTokenExpired() && $client->getRefreshToken()) {
                     $newToken = $client->fetchAccessTokenWithRefreshToken($client->getRefreshToken());
 
@@ -69,6 +68,11 @@ abstract class SynchronizeResource
                         ]);
                     }
                 }
+            } else {
+                Log::warning("No token found for synchronizable", [
+                    'id' => $this->synchronizable->id,
+                    'type' => get_class($this->synchronizable)
+                ]);
             }
 
             $this->googleService = new \Google_Service_Calendar($client);
@@ -84,41 +88,45 @@ abstract class SynchronizeResource
         return $this->googleService;
     }
 
-    protected function getPrimaryCalendarId(): ?string
+    protected function getPrimaryCalendar()
     {
-        $primaryCalendar = $this->synchronizable->calendars()
-            ->where('is_primary', 1)
-            ->first();
-
-        if ($primaryCalendar) {
-            return $primaryCalendar->google_id;
+        if ($this->synchronizable instanceof \Webkul\Google\Models\Account) {
+            return $this->synchronizable->calendars->firstWhere('is_primary', 1);
+        } elseif ($this->synchronizable instanceof \Webkul\Google\Models\Calendar) {
+            return $this->synchronizable;
         }
 
-        return $this->synchronizable->google_id;
+        Log::warning("Unknown synchronizable type", [
+            'type' => get_class($this->synchronizable)
+        ]);
+
+        return null;
     }
 
     public function handle()
     {
         try {
             $this->ensureTenantDbLoaded();
-            $service = $this->getGoogleService();
 
-            $pageToken = null;
-            $syncToken = $this->synchronization->token;
-
-            $options = compact('pageToken', 'syncToken');
-
-            $allItems = $this->getGoogleRequest($service, $options);
-
-            if (empty($allItems)) {
+            if (!$this->synchronizable->token) {
+                Log::warning("Skipping sync: missing token", [
+                    'id' => $this->synchronizable->id,
+                    'type' => get_class($this->synchronizable)
+                ]);
                 return;
             }
 
-            foreach ($allItems as $item) {
+            $service = $this->getGoogleService();
+            $items = $this->getGoogleRequest($service, [
+                'pageToken' => null,
+                'syncToken' => $this->synchronization->token
+            ]);
+
+            foreach ($items as $item) {
                 $this->syncItem($item);
             }
 
-            // Safely update next sync token
+            // Update next sync token safely
             if ($this->lastResponse && method_exists($this->lastResponse, 'getNextSyncToken')) {
                 $nextToken = $this->lastResponse->getNextSyncToken();
                 if ($nextToken) {
@@ -133,31 +141,26 @@ abstract class SynchronizeResource
             $decoded = json_decode($e->getMessage(), true);
 
             if (isset($decoded['error']) && $decoded['error'] === 'invalid_grant') {
-                // Token revoked/expired permanently
-                Log::warning("Google token revoked or expired - reauth required", [
-                    'account_id' => $this->synchronizable->id ?? null,
-                    'tenant_db'  => $this->tenantDb,
+                Log::warning("Google token revoked or expired", [
+                    'id' => $this->synchronizable->id,
+                    'type' => get_class($this->synchronizable)
                 ]);
 
-                // Mark account as requiring reauth
                 if (method_exists($this->synchronizable, 'update')) {
                     $this->synchronizable->update(['requires_reauth' => 1]);
                 }
 
-                return; // don’t retry
+                return;
             }
 
             Log::error('SynchronizeResource API error', [
-                'error'      => $e->getMessage(),
-                'account_id' => $this->synchronizable->id ?? null,
-                'tenant_db'  => $this->tenantDb,
+                'error' => $e->getMessage(),
+                'stack' => $e->getTraceAsString(),
             ]);
         } catch (\Exception $e) {
             Log::error('SynchronizeResource job failed', [
-                'error'      => $e->getMessage(),
-                'stack'      => $e->getTraceAsString(),
-                'account_id' => $this->synchronizable->id ?? null,
-                'tenant_db'  => $this->tenantDb,
+                'error' => $e->getMessage(),
+                'stack' => $e->getTraceAsString(),
             ]);
         }
     }
