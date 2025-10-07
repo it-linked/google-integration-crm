@@ -13,21 +13,21 @@ class WebhookController extends Controller
 {
     public function __invoke(Request $request)
     {
-        $host        = $request->getHost();
-        $channelId   = $request->header('x-goog-channel-id');
-        $resourceId  = $request->header('x-goog-resource-id');
+        $host          = $request->getHost();
+        $channelId     = $request->header('x-goog-channel-id');
+        $resourceId    = $request->header('x-goog-resource-id');
         $resourceState = $request->header('x-goog-resource-state');
 
         Log::info('📅 Google Calendar webhook received', [
-            'host'         => $host,
-            'channel_id'   => $channelId,
-            'resource_id'  => $resourceId,
+            'host'           => $host,
+            'channel_id'     => $channelId,
+            'resource_id'    => $resourceId,
             'resource_state' => $resourceState,
         ]);
 
-         // ── Detect Tenant by Host + Resource ID ─────────────────────────────
+        // ── Detect Tenant by Host + Calendar Resource ID ─────────────────────────────
         $tenant = AdminUserTenant::where('domain', $host)
-            ->whereJsonContains('meta->google->calendar->resource_id', $resourceId)
+            ->where('meta->google->calendar->resource_id', $resourceId)
             ->first();
 
         if (! $tenant) {
@@ -37,6 +37,7 @@ class WebhookController extends Controller
             ]);
             return response()->json(['error' => 'Tenant not found or invalid resource ID'], 404);
         }
+
 
         // Switch to tenant DB
         Config::set('database.connections.tenant.database', $tenant->tenant_db);
