@@ -119,9 +119,6 @@ class Synchronization extends Model implements SynchronizationContract
      | Meta Storage in Master DB
      --------------------------------------------------------------*/
 
-    /**
-     * Store or update the Google Calendar resource mapping in admin_user_tenants.meta
-     */
     protected function storeResourceMeta(): void
     {
         try {
@@ -150,10 +147,17 @@ class Synchronization extends Model implements SynchronizationContract
 
             $existingMeta = $existingMeta ? json_decode($existingMeta, true) : [];
 
-            // Prepare the Google meta payload
+            /**
+             * Determine whether this sync belongs to Account or Calendar.
+             * Example: Webkul\Google\Models\Account → account
+             *          Webkul\Google\Models\Calendar → calendar
+             */
+            $type = strtolower(class_basename($this->synchronizable_type));
+
+            // Prepare the Google meta payload for the current type
             $googleMeta = [
                 'google' => [
-                    'calendar' => [
+                    $type => [
                         'resource_id'        => $this->resource_id,
                         'synchronization_id' => $this->id,
                         'expired_at'         => optional($this->expired_at)->toDateTimeString(),
@@ -162,10 +166,10 @@ class Synchronization extends Model implements SynchronizationContract
                 ],
             ];
 
-            // Merge new meta into existing
+            // Merge new meta into existing meta recursively
             $mergedMeta = $this->mergeMeta($existingMeta, $googleMeta);
 
-            // Update or insert meta
+            // Update or insert meta in master DB
             DB::connection('mysql')->table('admin_user_tenants')->updateOrInsert(
                 [
                     'admin_user_id' => $masterUser->id,
@@ -180,12 +184,17 @@ class Synchronization extends Model implements SynchronizationContract
             Log::info('Stored Google resource_id in admin_user_tenants meta', [
                 'admin_user_id' => $masterUser->id,
                 'tenant_db'     => $tenantDb,
+                'type'          => $type,
                 'resource_id'   => $this->resource_id,
             ]);
         } catch (\Throwable $e) {
-            Log::error('Failed to store Google meta', ['error' => $e->getMessage()]);
+            Log::error('Failed to store Google meta', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
         }
     }
+
 
     /**
      * Recursively merge arrays
