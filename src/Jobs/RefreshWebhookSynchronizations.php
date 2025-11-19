@@ -10,6 +10,7 @@ use Illuminate\Queue\SerializesModels;
 use Webkul\Google\Models\Synchronization;
 use Illuminate\Support\Facades\Log;
 use Webkul\Master\Models\AdminUserTenant;
+use Illuminate\Support\Facades\Config;
 
 class RefreshWebhookSynchronizations implements ShouldQueue
 {
