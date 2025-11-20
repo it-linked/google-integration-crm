@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 use Webkul\Google\Repositories\GoogleAppRepository;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Http\RedirectResponse;
 
 class GoogleAppController extends Controller
 {
@@ -62,19 +64,30 @@ class GoogleAppController extends Controller
      * Remove the Google App configuration.
      */
     public function destroy(Request $request): RedirectResponse
-    {
-        // id is passed via route or form
-        $id = $request->route('id') ?? $request->input('id');
+{
+    $id = $request->route('id') ?? $request->input('id');
 
+    try {
         $googleApp = $this->googleAppRepository->find($id);
 
         if ($googleApp) {
             $this->googleAppRepository->delete($googleApp->id);
             session()->flash('success', trans('google::app.index.configuration-deleted'));
+
+            Log::info("Google App deleted successfully.", ['id' => $id]);
         } else {
             session()->flash('error', trans('google::app.index.configuration-deleted'));
+            Log::warning("Google App deletion failed. Record not found.", ['id' => $id]);
         }
+    } catch (\Exception $e) {
+        Log::error("Error deleting Google App.", [
+            'id' => $id,
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
 
-        return redirect()->route('admin.google.app.index');
+        session()->flash('error', 'An error occurred while deleting the configuration.');
     }
+
+    return redirect()->route('admin.google.app.index');
 }
