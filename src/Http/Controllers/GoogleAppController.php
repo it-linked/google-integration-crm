@@ -7,7 +7,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 use Webkul\Google\Repositories\GoogleAppRepository;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Http\RedirectResponse;
 
 class GoogleAppController extends Controller
 {
