@@ -50,10 +50,10 @@ class GoogleAppController extends Controller
 
         if ($existing) {
             $this->googleAppRepository->update($validated, $existing->id);
-            session()->flash('success', trans('google::app.index.configuration-saved'));
+            session()->flash('success', trans('google::app.app.index.configuration-saved'));
         } else {
             $this->googleAppRepository->create($validated);
-            session()->flash('success', trans('google::app.index.configuration-saved'));
+            session()->flash('success', trans('google::app.app.index.configuration-saved'));
         }
 
         return redirect()->route('admin.google.app.index');
@@ -71,11 +71,11 @@ class GoogleAppController extends Controller
 
             if ($googleApp) {
                 $this->googleAppRepository->delete($googleApp->id);
-                session()->flash('success', trans('google::app.index.configuration-deleted'));
+                session()->flash('success', trans('google::app.app.index.configuration-deleted'));
 
                 Log::info("Google App deleted successfully.", ['id' => $id]);
             } else {
-                session()->flash('error', trans('google::app.index.configuration-deleted'));
+                session()->flash('error', trans('google::app.app.index.configuration-deleted'));
                 Log::warning("Google App deletion failed. Record not found.", ['id' => $id]);
             }
         } catch (\Exception $e) {
