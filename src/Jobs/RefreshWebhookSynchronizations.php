@@ -11,6 +11,7 @@ use Webkul\Google\Models\Synchronization;
 use Illuminate\Support\Facades\Log;
 use Webkul\Master\Models\AdminUserTenant;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 
 class RefreshWebhookSynchronizations implements ShouldQueue
 {
